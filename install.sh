@@ -115,7 +115,7 @@ EOF
 
 ln -sf /etc/nginx/sites-available/authflow /etc/nginx/sites-enabled/
 rm -f /etc/nginx/sites-enabled/default
-nginx -t && systemctl reload nginx
+nginx -t && systemctl start nginx && systemctl enable nginx && systemctl reload nginx
 
 log "Creating systemd service..."
 cat > /etc/systemd/system/authflow.service << EOF
@@ -138,7 +138,7 @@ WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
-systemctl enable authflow nginx
+systemctl enable authflow
 systemctl start authflow
 
 sleep 3
@@ -150,6 +150,7 @@ echo "     ✅ INSTALLATION COMPLETE!"
 echo "============================================"
 echo ""
 echo "📊 DASHBOARD: https://$DOMAIN/$ADMIN_PATH"
+echo "🔑 Username: admin"
 echo "🔑 Password: $ADMIN_PASS"
 echo ""
 echo "🌐 PORTALS:"
@@ -157,4 +158,7 @@ echo "   1: https://$SUB1.$DOMAIN"
 echo "   2: https://$SUB2.$DOMAIN"
 echo "   3: https://$SUB3.$DOMAIN"
 echo ""
+echo "🛠️  Commands:"
+echo "   sudo systemctl status authflow"
+echo "   sudo journalctl -u authflow -f"
 echo "============================================"
