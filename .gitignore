@@ -1,0 +1,11 @@
+# Binaries
+authflow-server
+
+# Configuration and Secrets
+config.json
+*.ini
+.secrets/
+
+# Data and Logs
+data/
+logs/
