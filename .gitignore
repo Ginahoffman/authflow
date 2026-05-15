@@ -1,17 +1,12 @@
 # Binaries
 authflow-server
-authflow-server.exe
 
-# Configuration and Secrets
+# Configuration
 config.json
 *.ini
 .secrets/
-.env
-*.key
-*.pem
-*.crt
 
-# Data and Logs
+# Data
 data/
 logs/
 *.db
@@ -20,23 +15,9 @@ logs/
 # OS files
 .DS_Store
 Thumbs.db
-desktop.ini
 
-# IDE files
+# IDE
 .idea/
 .vscode/
 *.swp
 *.swo
-*~
-*.bak
-
-# Compiled files
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
-
-# Test files
-*.test
-*.out

