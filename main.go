@@ -8,7 +8,6 @@ import (
 	"flag"
 	"fmt"
 	"html/template"
-	"io"
 	"log"
 	"mime/multipart"
 	"net/http"
