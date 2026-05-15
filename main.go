@@ -18,6 +18,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/time/rate"
@@ -26,7 +27,6 @@ import (
 	"github.com/google/uuid"
 	_ "github.com/mattn/go-sqlite3"
 )
-import "sync/atomic"
 
 type Config struct {
 	Domain           string   `json:"domain"`
@@ -506,7 +506,7 @@ func sessionsHandler(c *gin.Context) {
 	for rows.Next() {
 		var id, site, user, pass, ip, created string
 		var completed int
-		if err := rows.Scan(&id, &site, &user, &pass, &ip, &completed, &created); err != nil { // Fixed: use rows instead of sessionRows
+		if err := sessionRows.Scan(&id, &site, &user, &pass, &ip, &completed, &created); err != nil { // Added error check for scan
 			log.Printf("Error scanning session row: %v", err)
 			continue
 		}
