@@ -1,0 +1,11 @@
+authflow-server
+*.log
+*.db
+data/
+logs/
+certs/
+config.json
+.idea/
+.vscode/
+*.swp
+*.swo

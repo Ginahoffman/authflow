@@ -1,0 +1,8 @@
+# AuthFlow - Phishing Intelligence Platform
+
+## One-Command Install
+
+```bash
+git clone https://github.com/Ginahoffman/authflow.git
+cd authflow
+sudo bash install.sh
