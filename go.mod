@@ -1,4 +1,4 @@
-module authflow
+module webanalyzer
 
 go 1.22
 
