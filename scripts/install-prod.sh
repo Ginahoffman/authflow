@@ -23,12 +23,6 @@ readonly RED='\033[0;31m'
 readonly YELLOW='\033[0;33m'
 readonly NC='\033[0m'
 
-# Deterministic package versions (Ubuntu Noble/Jammy compatible)
-readonly NGINX_VERSION="1.24.0-2ubuntu7"
-readonly GOLANG_VERSION="1.22"
-readonly CERTBOT_VERSION="2.9.0-1"
-readonly CF_CERTBOT_VERSION="2.0.0-1"
-
 # Installation paths
 readonly INSTALL_DIR="/opt/authflow"
 readonly EVILGINX_DIR="/opt/evilginx2"
@@ -168,11 +162,12 @@ preflight_checks() {
 # Install dependencies with pinned versions
 # ============================================================================
 install_dependencies() {
-    log "Installing dependencies with pinned versions..."
-    apt-get update -qq
+    log "Installing system dependencies..."
+    apt-get update -y
 
-    # Install with version pinning where available
-    apt-get install -y -qq \
+    # Install required packages. Removing strict version pinning to ensure 
+    # compatibility with the latest available security patches in the repository.
+    apt-get install -y \
         git \
         curl \
         wget \
@@ -180,10 +175,10 @@ install_dependencies() {
         unzip \
         jq \
         sqlite3 \
-        "nginx=${NGINX_VERSION}*" \
-        "certbot=${CERTBOT_VERSION}*" \
-        "python3-certbot-dns-cloudflare=${CF_CERTBOT_VERSION}*" \
-        "golang-go=2:${GOLANG_VERSION}*"
+        nginx \
+        certbot \
+        python3-certbot-dns-cloudflare \
+        golang-go
 
     log "Dependencies installed successfully"
 }
