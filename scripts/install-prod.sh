@@ -142,6 +142,7 @@ preflight_checks() {
     [[ $EUID -ne 0 ]] && err "This script must be run as root (sudo)"
 
     [[ ! -f "$REPO_SOURCE/cmd/authflow/main.go" ]] && err "Repository source not found at $REPO_SOURCE/cmd/authflow/main.go"
+    [[ ! -f "$REPO_SOURCE/go.mod" ]] && warn "go.mod not found in source. It will be initialized during the build phase."
 
     # Verify required commands exist
     for cmd in git curl wget nginx certbot openssl systemctl; do
@@ -245,6 +246,12 @@ build_authflow() {
     log "Building AuthFlow binary..."
 
     cd "$INSTALL_DIR"
+
+    # Initialize Go module if missing to ensure internal imports resolve
+    if [[ ! -f "go.mod" ]]; then
+        log "Initializing Go module 'authflow'..."
+        go mod init authflow || err "Failed to initialize Go module"
+    fi
 
     # Ensure Go dependencies are resolved
     go mod tidy
