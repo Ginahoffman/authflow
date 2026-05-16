@@ -18,7 +18,7 @@ The production installer automates the deployment of Nginx, Go, Certbot, Evilgin
 
 ```bash
 # Clone the repository
-git clone https://github.com/tartmo/authflow.git
+git clone https://github.com/Ginahoffman/authflow.git
 cd authflow
 
 # Make the installer executable
