@@ -1,38 +1,14 @@
 # Binaries
 authflow-server
-webanalyzer
-webanalyzer-cli
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
 
-# Config & Secrets
-config.json
-*.ini
-.secrets/
-.env
-.env.*
-!.env.template
-
-# Data & Logs
+# Local Configuration & Sensitive Data
+config/config.json
 data/
 logs/
-*.db
-*.db-journal
-
-# Old/Deprecated
-scripts/install.sh
-install.sh
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-*.iml
-
-# Build artifacts
-build/
-dist/
-*.out
+*.ini
+.env

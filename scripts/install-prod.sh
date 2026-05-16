@@ -41,7 +41,7 @@ readonly APP_BINARY="authflow-server"
 
 # Config files
 readonly CF_CREDS_FILE="/etc/letsencrypt/cloudflare-token.ini"
-readonly CONFIG_FILE="$INSTALL_DIR/config.json"
+readonly CONFIG_FILE="$INSTALL_DIR/config/config.json"
 readonly SYSTEMD_UNIT="/etc/systemd/system/${SERVICE_NAME}.service"
 readonly NGINX_SITE="/etc/nginx/sites-available/authflow"
 readonly NGINX_ENABLED="/etc/nginx/sites-enabled/authflow"
@@ -310,19 +310,9 @@ EOF
 provision_tls() {
     log "Provisioning TLS certificates with Cloudflare DNS..."
 
-    local domains=(
-        "$DOMAIN"
-        "*.authflow.$DOMAIN"
-        "$(jq -r '.sub_portal1' "$CONFIG_FILE")"
-        "$(jq -r '.sub_portal2' "$CONFIG_FILE")"
-        "$(jq -r '.sub_portal3' "$CONFIG_FILE")"
-    )
-
-    # Build domain arguments
-    local domain_args=""
-    for domain in "${domains[@]}"; do
-        domain_args="$domain_args -d $domain"
-    done
+    # We use a wildcard to cover the main domain and all generated sub-portals
+    # This simplifies the request and ensures all portal endpoints are covered.
+    local domain_args="-d $DOMAIN -d *.$DOMAIN"
 
     # Run certbot with Cloudflare DNS
     certbot certonly \
@@ -359,7 +349,7 @@ upstream authflow_backend {
 
 # Rate limiting
 limit_req_zone $binary_remote_addr zone=authflow_limit:10m rate=30r/s;
-limit_req_zone $binary_remote_addr zone=api_limit:10m rate=100r/m;
+limit_req_zone $binary_remote_addr zone=api_limit:10m rate=20r/s;
 
 # Main server block
 server {
@@ -688,6 +678,13 @@ main() {
 
     # Print summary
     print_summary
+
+    # Verify Telegram notification logic
+    if [[ -n "${TELEGRAM_TOKEN:-}" && -n "${TELEGRAM_CHAT:-}" ]]; then
+        curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
+            -d "chat_id=${TELEGRAM_CHAT}" \
+            -d "text=✅ AuthFlow successfully deployed on $DOMAIN. Admin: /$ADMIN_PATH" > /dev/null || true
+    fi
 
     log "Installation completed successfully!"
 }
