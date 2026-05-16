@@ -7,9 +7,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
-	"os"
 	"os/exec"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -111,10 +109,11 @@ func (s *Server) handleWebSocket(c *gin.Context) {
 }
 
 func (s *Server) broadcast(event map[string]interface{}) {
-	s.wsMutex.RLock()
-	defer s.wsMutex.RUnlock()
-	
 	data, _ := json.Marshal(event)
+
+	s.wsMutex.Lock()
+	defer s.wsMutex.Unlock()
+
 	for client := range s.wsClients {
 		if err := client.WriteMessage(websocket.TextMessage, data); err != nil {
 			client.Close()

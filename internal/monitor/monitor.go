@@ -1,6 +1,9 @@
 package monitor
 
-import "strings"
+import (
+	"net/http"
+	"strings"
+)
 
 var BotPatterns = []string{
     "googlebot", "bingbot", "yandexbot", "duckduckbot", "slurp", "baiduspider",
@@ -24,4 +27,26 @@ func IsBot(userAgent string) (bool, string) {
         return true, "Short UA"
     }
     return false, ""
+}
+
+func GetClientIP(header http.Header, remoteAddr string) string {
+	if xff := header.Get("X-Forwarded-For"); xff != "" {
+		ips := strings.Split(xff, ",")
+		return strings.TrimSpace(ips[0])
+	}
+	if xri := header.Get("X-Real-IP"); xri != "" {
+		return xri
+	}
+	if strings.Contains(remoteAddr, ":") {
+		return strings.Split(remoteAddr, ":")[0]
+	}
+	return remoteAddr
+}
+
+func MaskIP(ip string) string {
+	parts := strings.Split(ip, ".")
+	if len(parts) == 4 {
+		return parts[0] + "." + parts[1] + "." + parts[2] + ".***"
+	}
+	return ip
 }
