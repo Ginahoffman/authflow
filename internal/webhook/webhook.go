@@ -19,14 +19,18 @@ type TelegramSender struct {
 	client   *http.Client
 }
 
-func NewSender(token, chatID, proxyURL string) *TelegramSender {
+func NewSender(token, chatID string, proxyURL ...string) *TelegramSender {
 	httpClient := &http.Client{
 		Timeout: 15 * time.Second,
 	}
 
-	proxyURL = strings.TrimSpace(proxyURL)
-	if proxyURL != "" {
-		if p, err := url.Parse(proxyURL); err == nil {
+	pURL := ""
+	if len(proxyURL) > 0 {
+		pURL = strings.TrimSpace(proxyURL[0])
+	}
+
+	if pURL != "" {
+		if p, err := url.Parse(pURL); err == nil {
 			if defaultTransport, ok := http.DefaultTransport.(*http.Transport); ok {
 				// Clone DefaultTransport to keep optimization settings (pooling, keep-alives)
 				transport := defaultTransport.Clone()
@@ -39,7 +43,7 @@ func NewSender(token, chatID, proxyURL string) *TelegramSender {
 	return &TelegramSender{
 		Token:    token,
 		ChatID:   chatID,
-		ProxyURL: proxyURL,
+		ProxyURL: pURL,
 		client:   httpClient,
 	}
 }

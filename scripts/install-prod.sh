@@ -636,6 +636,7 @@ print_summary() {
     echo "  VPS IP: $VPS_IP"
     echo "  Admin Path: /$ADMIN_PATH"
     echo "  Admin Password: $ADMIN_PASS"
+    echo "  Webhook Secret: $WEBHOOK_SECRET"
     echo ""
     echo "Installation Paths:"
     echo "  Application: $INSTALL_DIR"
