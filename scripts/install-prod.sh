@@ -100,6 +100,10 @@ parse_args() {
                 PROXY_URL="$2"
                 shift 2
                 ;;
+            --go-proxy)
+                GO_PROXY="$2"
+                shift 2
+                ;;
             *)
                 err "Unknown argument: $1"
                 ;;
@@ -139,6 +143,7 @@ validate_config() {
     fi
 
     PROXY_URL="${PROXY_URL:-}"
+    GO_PROXY="${GO_PROXY:-https://proxy.golang.org,direct}"
 }
 
 # ============================================================================
@@ -252,6 +257,9 @@ build_authflow() {
     log "Building AuthFlow binary..."
 
     cd "$INSTALL_DIR"
+
+    log "Using Go Proxy: $GO_PROXY"
+    export GOPROXY="$GO_PROXY"
 
     # Initialize Go module if missing to ensure internal imports resolve
     if [[ ! -f "go.mod" ]]; then
@@ -655,7 +663,7 @@ print_summary() {
     echo "  Auto-renew: certbot renew (via systemd timer)"
     echo ""
     echo "Quick Access:"
-    echo "  Dashboard: https://$DOMAIN/$ADMIN_PATH"
+echo "  Dashboard: https://$DOMAIN/$ADMIN_PATH/"
     echo ""
     echo "=========================================="
 }
