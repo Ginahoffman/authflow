@@ -156,7 +156,8 @@ preflight_checks() {
     [[ ! -f "$REPO_SOURCE/go.mod" ]] && warn "go.mod not found in source. It will be initialized during the build phase."
 
     # Verify required commands exist
-    for cmd in git curl wget nginx certbot openssl systemctl; do
+    # We exclude nginx and certbot here because they are installed by the script itself later
+    for cmd in git curl wget openssl systemctl; do
         command -v "$cmd" &>/dev/null || err "Required command not found: $cmd"
     done
 
@@ -175,6 +176,7 @@ install_dependencies() {
         git \
         curl \
         wget \
+        build-essential \
         unzip \
         jq \
         sqlite3 \
