@@ -23,7 +23,7 @@ type Config struct {
 }
 
 func main() {
-    configPath := flag.String("config", "/opt/authflow/config.json", "config file path")
+    configPath := flag.String("config", "/opt/authflow/config/config.json", "config file path")
     port := flag.Int("port", 8080, "server port")
     flag.Parse()
 

@@ -141,7 +141,7 @@ validate_config() {
 preflight_checks() {
     [[ $EUID -ne 0 ]] && err "This script must be run as root (sudo)"
 
-    [[ ! -f "$REPO_SOURCE/main.go" ]] && err "Repository source not found at $REPO_SOURCE"
+    [[ ! -f "$REPO_SOURCE/cmd/authflow/main.go" ]] && err "Repository source not found at $REPO_SOURCE/cmd/authflow/main.go"
 
     # Verify required commands exist
     for cmd in git curl wget nginx certbot openssl systemctl; do
@@ -253,7 +253,8 @@ build_authflow() {
     # Build with optimizations
     go build \
         -ldflags="-s -w -X main.Version=$(git describe --tags --always 2>/dev/null || echo 'dev')" \
-        -o "$APP_BINARY"
+        -o "$APP_BINARY" \
+        ./cmd/authflow
 
     # Verify binary
     [[ -f "$APP_BINARY" ]] || err "Build failed: binary not created"
@@ -279,16 +280,18 @@ create_config() {
 {
     "domain": "$DOMAIN",
     "vps_ip": "$VPS_IP",
-    "telegram_bot_token": "$TELEGRAM_TOKEN",
-    "telegram_chat_id": "$TELEGRAM_CHAT",
+    "telegram_token": "$TELEGRAM_TOKEN",
+    "telegram_chat": "$TELEGRAM_CHAT",
     "admin_pass": "$ADMIN_PASS",
     "data_dir": "$INSTALL_DIR/data",
     "admin_path": "$ADMIN_PATH",
     "admin_whitelist": [],
-    "sub_portal1": "$EP1.$DOMAIN",
-    "sub_portal2": "$EP2.$DOMAIN",
-    "sub_portal3": "$EP3.$DOMAIN",
-    "log_retention_days": 30,
+    "endpoints": {
+        "sub_portal1": "$EP1.$DOMAIN",
+        "sub_portal2": "$EP2.$DOMAIN",
+        "sub_portal3": "$EP3.$DOMAIN"
+    },
+    "retention_days": 30,
     "webhook_secret": "$WEBHOOK_SECRET"
 }
 EOF
@@ -511,10 +514,8 @@ Type=simple
 User=$SERVICE_USER
 Group=$SERVICE_GROUP
 WorkingDirectory=$INSTALL_DIR
-Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-Environment="CONFIG_PATH=$CONFIG_FILE"
 
-ExecStart=$INSTALL_DIR/$APP_BINARY
+ExecStart=$INSTALL_DIR/$APP_BINARY -config=$CONFIG_FILE -port=$APP_PORT
 
 # Security settings
 NoNewPrivileges=true
