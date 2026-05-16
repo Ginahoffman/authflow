@@ -55,7 +55,11 @@ func New(cfg Config) (*Server, error) {
 		config:    cfg,
 		storage:   store,
 		startTime: time.Now(),
-		upgrader:  websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
+		upgrader:  websocket.Upgrader{
+			ReadBufferSize:  1024,
+			WriteBufferSize: 1024,
+			CheckOrigin:     func(r *http.Request) bool { return true },
+		},
 		wsClients: make(map[*websocket.Conn]bool),
 	}, nil
 }
@@ -98,17 +102,44 @@ func (s *Server) Start(port int) error {
 func (s *Server) handleWebSocket(c *gin.Context) {
 	conn, err := s.upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
-		log.Printf("WebSocket error: %v", err)
+		log.Printf("WebSocket upgrade error: %v", err)
 		return
 	}
 	
 	s.wsMutex.Lock()
 	s.wsClients[conn] = true
 	s.wsMutex.Unlock()
-	
-	log.Printf("WebSocket client connected from %s", c.ClientIP())
+
+	// Start a read loop to handle heartbeats and disconnections
+	go s.wsReadLoop(conn)
 }
 
+func (s *Server) wsReadLoop(conn *websocket.Conn) {
+	defer func() {
+		s.wsMutex.Lock()
+		delete(s.wsClients, conn)
+		s.wsMutex.Unlock()
+		conn.Close()
+	}()
+
+	// Set read deadline and pong handler to keep connection alive
+	conn.SetReadLimit(512)
+	conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	conn.SetPongHandler(func(string) error {
+		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		return nil
+	})
+
+	for {
+		_, _, err := conn.ReadMessage()
+		if err != nil {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				log.Printf("WebSocket read error: %v", err)
+			}
+			break
+		}
+	}
+}
 func (s *Server) broadcast(event map[string]interface{}) {
 	data, _ := json.Marshal(event)
 
