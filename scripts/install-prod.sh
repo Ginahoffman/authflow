@@ -38,7 +38,7 @@ readonly CF_CREDS_FILE="/etc/letsencrypt/cloudflare-token.ini"
 readonly CONFIG_FILE="$INSTALL_DIR/config/config.json"
 readonly SYSTEMD_UNIT="/etc/systemd/system/${SERVICE_NAME}.service"
 readonly NGINX_SITE="/etc/nginx/sites-available/authflow"
-readonly NGINX_ENABLED="/etc/nginx/sites-enabled/authflow"
+readonly NGINX_ENABLED="/etc/nginx/sites-enabled"
 
 # ============================================================================
 # Logging functions
