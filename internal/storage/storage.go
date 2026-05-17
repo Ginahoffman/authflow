@@ -41,7 +41,7 @@ type Visitor struct {
 }
 
 func New(dataDir string) (*Storage, error) {
-	dbPath := filepath.Join(dataDir, "analyzer.db")
+	dbPath := filepath.Join(dataDir, "authflow.db")
 	db, err := sql.Open("sqlite3", dbPath+"?_journal=WAL&_sync=NORMAL")
 	if err != nil {
 		return nil, err

