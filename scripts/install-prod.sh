@@ -366,6 +366,7 @@ provision_tls() {
         --dns-cloudflare-credentials "$CF_CREDS_FILE" \
         --non-interactive \
         --agree-tos \
+        --expand \
         --email "admin@$DOMAIN" \
         --no-eff-email \
         $domain_args
