@@ -639,7 +639,7 @@ expect {
         expect -re "evilginx\s+>"
         send "config domain $DOMAIN\r"
         expect -re "evilginx\s+>"
-        send "config ipv4 $VPS_IP\r"
+        send "config ipv4 0.0.0.0\r"
         expect -re "evilginx\s+>"
         
         # Enable phishlets
