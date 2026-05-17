@@ -1,13 +1,11 @@
 daemon: false
 debug: true
-version: 3.3.0
 domain: {{.Domain}}
-ipv4: 0.0.0.0
+external_ipv4: {{.VpsIp}}
 http_port: 8081
 https_port: 8443
 dns_port: 0
 autocert: false
-redirect_url: https://www.google.com
 phishlets_path: /opt/evilginx/phishlets
 cert_path: /opt/evilginx/certs
 database: /opt/evilginx/evilginx.db
