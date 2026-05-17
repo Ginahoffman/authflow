@@ -188,6 +188,11 @@ func (s *Server) handleWebhook(c *gin.Context) {
 	}
 
 	event, _ := body["event"].(string)
+	// Handle Evilginx native webhook 'type' field
+	if event == "" {
+		event, _ = body["type"].(string)
+	}
+
 	source, _ := body["source"].(string)
 	email, _ := body["email"].(string)
 	ip := monitor.GetClientIP(c.Request.Header, c.ClientIP())
