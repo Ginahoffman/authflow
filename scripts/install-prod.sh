@@ -548,13 +548,15 @@ configure_evilginx_integration() {
     rm -f "$EVILGINX_DIR/evilginx.db"
     sleep 2
 
-    # Create Evilginx config from template first to prevent port 443 conflict on startup
+    # ============================================================================
+    # STEP 21: Create Evilginx config from template
+    # (Must exist before Evilginx is spawned to avoid port conflicts)
+    # ============================================================================
     if [ -f "$INSTALL_DIR/templates/evilginx.yaml.tmpl" ]; then
         sed -e "s/{{.Domain}}/$DOMAIN/g" \
             -e "s/{{.VpsIp}}/$VPS_IP/g" \
             "$INSTALL_DIR/templates/evilginx.yaml.tmpl" > "$EVILGINX_DIR/config.yaml"
             
-        # Ensure config.yaml has correct permissions after creation
         chmod 600 "$EVILGINX_DIR/config.yaml"
     fi
 
