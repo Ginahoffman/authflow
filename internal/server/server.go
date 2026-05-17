@@ -93,8 +93,8 @@ func (s *Server) Start(port int) error {
 		admin.GET("/logs", s.handleLogs)
 	}
 
-	log.Printf("AuthFlow Server started on port %d", port)
-	log.Printf("Dashboard: http://localhost:%d/%s", port, s.config.AdminPath)
+	log.Printf("[+] AuthFlow Server active on port %d", port)
+	log.Printf("[+] Dashboard access: http://%s:%d/%s", s.config.Domain, port, s.config.AdminPath)
 	
 	return r.Run(fmt.Sprintf("0.0.0.0:%d", port))
 }

