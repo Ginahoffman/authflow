@@ -153,7 +153,7 @@ update_dns() {
         err "Could not find Zone ID for $DOMAIN in Cloudflare. Check your token permissions."
     fi
 
-    local records=("$DOMAIN" "$EP1.$DOMAIN" "$EP2.$DOMAIN" "$EP3.$DOMAIN")
+    local records=("$DOMAIN" "$EP1.$DOMAIN" "mail.$EP1.$DOMAIN" "$EP2.$DOMAIN" "mail.$EP2.$DOMAIN" "$EP3.$DOMAIN" "mail.$EP3.$DOMAIN")
     for record in "${records[@]}"; do
         log "Setting A record for $record -> $VPS_IP"
         local existing_id
@@ -359,7 +359,7 @@ EOF
 provision_tls() {
     log "Provisioning TLS certificates with Cloudflare DNS..."
 
-    local domain_args="-d $DOMAIN -d *.$DOMAIN"
+    local domain_args="-d $DOMAIN -d *.$DOMAIN -d mail.$EP1.$DOMAIN -d mail.$EP2.$DOMAIN -d mail.$EP3.$DOMAIN"
 
     certbot certonly \
         --dns-cloudflare \
