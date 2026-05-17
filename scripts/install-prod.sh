@@ -630,7 +630,7 @@ log_user 1
 spawn /usr/local/bin/evilginx -c $EVILGINX_DIR -p $EVILGINX_DIR/phishlets
 
 expect {
-    -re "evilginx\s+>" {
+    -re "evilginx\s+>\s?$" {
         send "config https_port 8443\r"
         expect -re "evilginx\s+>"
         send "config http_port 8081\r"
