@@ -594,7 +594,7 @@ Wants=network-online.target
 Type=simple
 User=root
 WorkingDirectory=$EVILGINX_DIR
-ExecStart=/usr/local/bin/evilginx
+ExecStart=/usr/local/bin/evilginx -c $EVILGINX_DIR -p $EVILGINX_DIR/phishlets
 Restart=always
 RestartSec=5
 StandardOutput=journal
@@ -636,7 +636,7 @@ EOF
 set timeout 10
 log_user 1
 
-spawn /usr/local/bin/evilginx
+spawn /usr/local/bin/evilginx -c $EVILGINX_DIR -p $EVILGINX_DIR/phishlets
 
 expect {
     -re "evilginx\s+>\s?$" {
