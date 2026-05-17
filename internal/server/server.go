@@ -192,6 +192,7 @@ func (s *Server) handleWebhook(c *gin.Context) {
 	if event == "" {
 		event, _ = body["type"].(string)
 	}
+	body["type"] = event // Normalize for broadcast
 
 	source, _ := body["source"].(string)
 	email, _ := body["email"].(string)

