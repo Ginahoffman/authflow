@@ -11,6 +11,12 @@ var BotPatterns = []string{
     "telegrambot", "applebot", "virustotal", "urlscan", "crawler", "spider", "scanner",
     "curl", "wget", "python-requests", "go-http-client", "node-fetch", "axios",
     "headless", "puppeteer", "playwright", "chatgpt", "claude", "censys", "shodan",
+    "headlesschrome", "chrome-lighthouse", "lighthouse", "phantomjs", "selenium",
+    "webdriver", "electron", "nmap", "nessus", "qualys", "acunetix", "netsparker",
+    "zgrab", "masscan", "nuclei", "project-discovery", "bitdiscovery", "expanse",
+    "paloaltonetworks", "fireeye", "crowdstrike", "netskope", "zscaler", "fortinet",
+    "internet-measurement", "security-research", "ahrefs", "semrush", "mj12bot",
+    "awario", "statsbot",
 }
 
 func IsBot(userAgent string) (bool, string) {

