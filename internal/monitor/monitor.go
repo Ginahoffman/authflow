@@ -16,7 +16,7 @@ var BotPatterns = []string{
     "zgrab", "masscan", "nuclei", "project-discovery", "bitdiscovery", "expanse",
     "paloaltonetworks", "fireeye", "crowdstrike", "netskope", "zscaler", "fortinet",
     "internet-measurement", "security-research", "ahrefs", "semrush", "mj12bot",
-    "awario", "statsbot",
+    "awario", "statsbot", "leakix", "l9scan", "l9explore",
 }
 
 func IsBot(userAgent string) (bool, string) {

