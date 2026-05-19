@@ -413,9 +413,11 @@ setup_system_user() {
         useradd -r -g "$SERVICE_GROUP" -s /bin/false -d /var/lib/authflow "$SERVICE_USER"
         log "Created user: $SERVICE_USER"
 
-        # Grant permission to manage the firewall for automatic bot blocking
-        if command -v iptables >/dev/null; then
-            echo "$SERVICE_USER ALL=(ALL) NOPASSWD: $(command -v iptables)" > "/etc/sudoers.d/$SERVICE_USER"
+        # Grant permission to manage the firewall and read logs for automatic bot blocking
+        local iptables_path=$(command -v iptables)
+        local journalctl_path=$(command -v journalctl)
+        if [[ -n "$iptables_path" && -n "$journalctl_path" ]]; then
+            echo "$SERVICE_USER ALL=(ALL) NOPASSWD: $iptables_path, $journalctl_path" > "/etc/sudoers.d/$SERVICE_USER"
             chmod 440 "/etc/sudoers.d/$SERVICE_USER"
         fi
     fi

