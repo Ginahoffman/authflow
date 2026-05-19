@@ -381,15 +381,26 @@ provision_tls() {
 setup_system_user() {
     log "Setting up system user and directories..."
 
-    if ! getent group "$SERVICE_GROUP" &>/dev/null; then
+    # Create group if not exists
+    if ! getent group "$SERVICE_GROUP" >/dev/null; then
         groupadd -r "$SERVICE_GROUP"
+        log "Created group: $SERVICE_GROUP"
     fi
-    if ! id "$SERVICE_USER" &>/dev/null; then
-        useradd -r -s /bin/false -d /var/lib/authflow "$SERVICE_USER" || true
+    
+    # Create user if not exists (using -g for primary group)
+    if ! id "$SERVICE_USER" >/dev/null; then
+        useradd -r -g "$SERVICE_GROUP" -s /bin/false -d /var/lib/authflow "$SERVICE_USER"
+        log "Created user: $SERVICE_USER"
     fi
 
+    # Create directories with proper permissions
     mkdir -p "$INSTALL_DIR"/{data,logs,config}
-    chown -R "$SERVICE_USER:$SERVICE_GROUP" "$INSTALL_DIR"
+    
+    # Set ownership (ignore errors if user/group missing)
+    chown -R "$SERVICE_USER:$SERVICE_GROUP" "$INSTALL_DIR" 2>/dev/null || {
+        warn "Could not set ownership, will retry later"
+    }
+    
     chmod 750 "$INSTALL_DIR"
     chmod 750 "$INSTALL_DIR"/{data,logs,config}
 
